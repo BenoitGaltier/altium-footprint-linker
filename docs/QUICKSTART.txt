@@ -1,0 +1,22 @@
+FOOTPRINT LINKER 1.0.0 — Windows 10/11 x64
+
+1. Extraire le ZIP puis lancer FootprintLinker.exe.
+2. Garder la console ouverte et utiliser l'interface du navigateur.
+3. Connecter l'URL du workspace et un token API autorise en lecture/ecriture.
+4. Choisir le CSV, le repertoire local de .PcbLib et le dossier Altium cible.
+5. Analyser, verifier le tableau, selectionner puis importer.
+
+Colonnes CSV : Item;Description;Supplier;Supplier Name;Supplier Item No;footprint
+Item est compare exactement au champ AU_ID, sans perdre les zeros initiaux.
+Les empreintes sont ajoutees en fin de liste ; le modele par defaut est conserve.
+Les autres colonnes du CSV ne modifient aucun parametre Altium.
+
+Le token et le journal sont chiffres sous %LOCALAPPDATA%\FootprintLinker.
+Ne pas effacer le journal sans avoir exporte le rapport et verifie Altium.
+En cas de creation incertaine, verifier Altium puis utiliser la reprise manuelle.
+
+Aucun Altium Designer, .NET ou Node.js a installer. Binaire non signe.
+Validation reelle des droits, regles du workspace et fichiers a effectuer
+sur un workspace de test avant utilisation de production.
+
+Code et documentation : https://github.com/BenoitGaltier/altium-footprint-linker

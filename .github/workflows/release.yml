@@ -1,0 +1,39 @@
+name: Portable release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Tests
+        shell: pwsh
+        run: ./scripts/test.ps1
+      - name: Verify version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content src/FootprintLinker/FootprintLinker.csproj -Raw)).Project.PropertyGroup.Version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match project version' }
+      - name: Build portable application
+        shell: pwsh
+        run: ./scripts/publish.ps1
+      - name: Test portable binary
+        shell: pwsh
+        run: ./scripts/smoke.ps1
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem dist/FootprintLinker-*-win-x64.zip,dist/FootprintLinker-*-win-x64.zip.sha256 | ForEach-Object FullName)
+          gh release create $env:GITHUB_REF_NAME @assets --title "Footprint Linker $env:GITHUB_REF_NAME" --notes-file docs/RELEASE.md
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

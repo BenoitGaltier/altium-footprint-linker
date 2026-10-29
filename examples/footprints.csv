@@ -1,0 +1,3 @@
+Item;Description;Supplier;Supplier Name;Supplier Item No;footprint
+00042;Example component;SUP;Example supplier;REF-001;SOT-23
+00043;Another component;SUP;Example supplier;REF-002;SOIC-8
