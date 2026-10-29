@@ -187,9 +187,40 @@ await Test("Invalid matching fields are rejected and changing the field invalida
  var invalid=await client.PostAsJsonAsync("/api/preferences",new{matchField=" "});Check(invalid.StatusCode==HttpStatusCode.BadRequest);
  await Post(client,"/api/preferences",new{matchField="OTHER_ID"});var response=await client.PostAsJsonAsync("/api/apply",new{planId=plan.GetProperty("id").GetString(),rowIds=plan.GetProperty("rows").EnumerateArray().Select(r=>r.GetProperty("id").GetString()).ToArray()});Check(response.StatusCode==HttpStatusCode.Conflict);await app.StopAsync();}}
 });
+await Test("2D and 3D preview selects the requested footprint and tessellates its embedded STEP box",async()=>{
+ var directory=Path.Combine(root,"visual");Directory.CreateDirectory(directory);var path=Path.Combine(directory,"preview.PcbLib");await VisualFixture.Write(path);
+ try {
+ var file=PcbLibrary.Catalog(directory,CancellationToken.None).Files.Single();var row=new PlanRow("r",CsvImport.Parse(csv)[0],"c1","C","1","ready",null,file,"SOT-23",[],1);
+ var preview=await new FootprintPreview().Render(row,CancellationToken.None);
+ Check(preview.Name=="SOT-23"&&preview.Pads==3&&preview.RenderedModels==1,JsonSerializer.Serialize(preview with{Svg="",Glb=null}));
+ Check(preview.WidthMm>3&&preview.WidthMm<3.3);Check(System.Xml.Linq.XDocument.Parse(preview.Svg).Root!.Name.LocalName=="svg");
+ var glb=Convert.FromBase64String(preview.Glb!);Check(Encoding.ASCII.GetString(glb,0,4)=="glTF");
+ using var json=JsonDocument.Parse(glb.AsMemory(20,BitConverter.ToInt32(glb,12)));var document=json.RootElement;
+ var node=document.GetProperty("nodes").EnumerateArray().Single(n=>n.TryGetProperty("extras",out var extras)&&extras.TryGetProperty("role",out var role)&&role.GetString()=="component");
+ var primitive=document.GetProperty("meshes")[node.GetProperty("mesh").GetInt32()].GetProperty("primitives")[0];
+ Check(document.GetProperty("accessors")[primitive.GetProperty("indices").GetInt32()].GetProperty("count").GetInt32()==36,"Known box must have twelve triangles");
+ } finally {Directory.Delete(directory,true);}
+});
+await Test("Absent and external 3D bodies are reported while 2D remains available",async()=>{
+ var directory=Path.Combine(root,"visual-missing");Directory.CreateDirectory(directory);
+ try { foreach(var kind in new[]{"none","external","extruded"}) {
+ var path=Path.Combine(directory,"preview.PcbLib");await VisualFixture.Write(path,modelKind:kind);var file=PcbLibrary.Catalog(directory,CancellationToken.None).Files.Single();
+ var row=new PlanRow("r",CsvImport.Parse(csv)[0],"c1","C","1","ready",null,file,"SOT-23",[],1);var preview=await new FootprintPreview().Render(row,CancellationToken.None);
+ Check(preview.Svg.Contains("<svg"));if(kind=="none")Check(preview.Warnings.Contains("previewNoBody"));if(kind=="external")Check(preview.Warnings.Contains("previewMissingModels"));if(kind=="extruded")Check(preview.Extrusions.Length==1&&Math.Abs(preview.Extrusions[0].Height-1)<.001);
+ }}finally{Directory.Delete(directory,true);}
+});
+await Test("Preview endpoint accepts only a current plan row, performs no writes and detects a changed source",async()=>{
+ var saved=File.ReadAllBytes(library);await VisualFixture.Write(library);var(client,app,fake)=await Host("preview-http");
+ try{await using(app){using(client){await Post(client,"/api/connect",new{name="Fixture",endpoint="fixture.altium.com",token="fixture-token"});var plan=await Analyze(client);var row=plan.GetProperty("rows")[0];
+ var preview=await Post(client,"/api/preview",new{planId=plan.GetProperty("id").GetString(),rowId=row.GetProperty("id").GetString()});Check(preview.GetProperty("renderedModels").GetInt32()==1);Check(fake.Creates==0&&fake.Adds==0&&fake.Uploads==0);
+ var invalid=await client.PostAsJsonAsync("/api/preview",new{planId="unknown",rowId=row.GetProperty("id").GetString()});Check(invalid.StatusCode==HttpStatusCode.Conflict);
+ File.AppendAllText(library,"changed");var changed=await client.PostAsJsonAsync("/api/preview",new{planId=plan.GetProperty("id").GetString(),rowId=row.GetProperty("id").GetString()});Check(changed.StatusCode==HttpStatusCode.BadRequest);Check((await changed.Content.ReadAsStringAsync()).Contains("fileChanged"));await app.StopAsync();}}}finally{File.WriteAllBytes(library,saved);}
+});
+var renderFixture=Path.Combine(Environment.CurrentDirectory,".artifacts","render-input.PcbLib");Directory.CreateDirectory(Path.GetDirectoryName(renderFixture)!);await VisualFixture.Write(renderFixture);
 if(args.Contains("--preview"))
 {
  var nested=Path.Combine(root,"local-libraries","Transistors");Directory.CreateDirectory(nested);File.Move(library,Path.Combine(nested,"source.PcbLib"));
+ await VisualFixture.Write(Path.Combine(nested,"source.PcbLib"));
  File.WriteAllText(Path.Combine(root,"input.csv"),csv);
  var(client,app,_)=await Host("preview",picker:new(){Result=new(root,false)});await using(app){using(client){
  await Post(client,"/api/connect",new{name="SIMULATION — Fixture workspace",endpoint="fixture.altium.com",token="fixture-token"});await Analyze(client);

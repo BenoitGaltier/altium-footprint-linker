@@ -1,4 +1,11 @@
-Footprint Linker 1.1.0 ajoute les évolutions demandées :
+Footprint Linker 1.2.0 ajoute la visualisation locale des empreintes, sans Altium Designer :
+
+- **Voir 2D / 3D** dans le tableau : aperçu SVG vectoriel, zoom et déplacement en 2D ; rotation, déplacement et zoom en 3D.
+- Lecture directe de l’empreinte sélectionnée dans le `.PcbLib`, rendu des modèles STEP embarqués et des corps extrudés disponibles.
+- Signalement des modèles externes ou non convertibles ; export SVG et GLB de la scène convertie.
+- Moteur et ressources graphiques inclus dans l’exécutable, aucun CDN. Export local en ligne de commande possible sans token de workspace.
+
+La version conserve les évolutions de la version 1.1.0 :
 
 - **Parcourir…** ouvre le sélecteur de dossier Windows pour choisir le répertoire racine des empreintes.
 - Recherche des `.PcbLib` dans tous ses sous-dossiers, avec chemin relatif affiché. Les noms présents dans plusieurs fichiers restent signalés comme ambigus, sans départage par chemin local.
@@ -10,4 +17,4 @@ Extrayez le ZIP et lancez **FootprintLinker.exe**. Windows 10/11 x64 ; aucun log
 
 Les connexions et le journal 1.0.0 sont conservés. L’ancienne destination globale est ignorée : la destination est maintenant calculée pour chaque composant.
 
-Tests automatiques et import sur simulateur. L’import sur un workspace réel et la sélection interactive dans le dialogue Windows restent à qualifier dans votre environnement.
+Les rendus 2D/3D sont testés sur un modèle STEP synthétique de dimensions connues et dans le véritable exécutable autonome sans connexion à un workspace. L’import sur un workspace réel et la sélection interactive dans le dialogue Windows restent à qualifier dans votre environnement. La visualisation ne remplace pas une validation de fabrication.

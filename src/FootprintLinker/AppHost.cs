@@ -6,7 +6,7 @@ namespace FootprintLinker;
 
 public static class AppHost
 {
-    public const string Version = "1.1.0";
+    public const string Version = "1.2.0";
     public static WebApplication Build(string[] args, Action<IServiceCollection>? configure = null)
     {
         var port = 0;
@@ -27,6 +27,7 @@ public static class AppHost
         builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(90) });
         builder.Services.AddSingleton<AltiumClient>();
         builder.Services.AddSingleton<IDirectoryPicker, WindowsDirectoryPicker>();
+        builder.Services.AddSingleton<FootprintPreview>();
         if (!args.Contains("--no-persistence")) builder.Services.AddSingleton(_ => new LocalStore(directory));
         builder.Services.AddSingleton<ImportSession>();
         configure?.Invoke(builder.Services);
@@ -40,7 +41,7 @@ public static class AppHost
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             context.Response.Headers["X-Frame-Options"] = "DENY";
             context.Response.Headers["Referrer-Policy"] = "no-referrer";
-            context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+            context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
             if (context.Request.Host.Host != "127.0.0.1") { context.Response.StatusCode = 403; return; }
             if (context.Request.Path.StartsWithSegments("/api"))
             {
@@ -66,6 +67,7 @@ public static class AppHost
         app.MapDelete("/api/local-data", async (ImportSession session, CancellationToken ct) => { await session.Forget(ct); return Results.Ok(); });
         app.MapPost("/api/analyze", async (AnalyzeRequest input, ImportSession session, CancellationToken ct) => await session.Analyze(input, ct));
         app.MapPost("/api/directory/pick", async (DirectoryPickRequest input, IDirectoryPicker picker, CancellationToken ct) => await picker.Pick(input.Directory, ct));
+        app.MapPost("/api/preview", async (PreviewRequest input, ImportSession session, FootprintPreview preview, CancellationToken ct) => await preview.Render(session.PreviewRow(input), ct));
         app.MapPost("/api/apply", async (ApplyRequest input, ImportSession session, CancellationToken ct) => await session.Apply(input, ct));
         app.MapPost("/api/recover", async (RecoveryRequest input, ImportSession session, CancellationToken ct) => { await session.Recover(input, ct); return Results.Ok(); });
         app.MapGet("/api/jobs/{id}", (string id, ImportSession session) => session.Job(id).Snapshot());
@@ -78,8 +80,11 @@ public static class AppHost
         {
             ["/"] = ("index.html", "text/html; charset=utf-8"), ["/app.mjs"] = ("app.mjs", "text/javascript; charset=utf-8"),
             ["/core.mjs"] = ("core.mjs", "text/javascript; charset=utf-8"),
-            ["/style.css"] = ("style.css", "text/css; charset=utf-8"), ["/favicon.svg"] = ("favicon.svg", "image/svg+xml")
+            ["/style.css"] = ("style.css", "text/css; charset=utf-8"), ["/favicon.svg"] = ("favicon.svg", "image/svg+xml"),
+            ["/preview.mjs"] = ("preview.mjs", "text/javascript; charset=utf-8")
         };
+        foreach (var file in new[] { "three.module.js", "three.core.js", "controls/OrbitControls.js", "loaders/GLTFLoader.js", "utils/BufferGeometryUtils.js", "utils/SkeletonUtils.js" })
+            assets["/vendor/three/" + file] = ("vendor.three." + file.Replace('/', '.'), "text/javascript; charset=utf-8");
         foreach (var (path, asset) in assets)
             app.MapGet(path, () => Results.Stream(typeof(AppHost).Assembly.GetManifestResourceStream("FootprintLinker.Web." + asset.Resource)!, asset.Mime));
         return app;

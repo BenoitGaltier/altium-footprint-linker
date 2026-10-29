@@ -1,0 +1,6 @@
+<Project>
+  <!-- .NET 10 supplies Source Link in the SDK. The pinned upstream explicitly adds
+       the obsolete 8.0 tooling; use the SDK implementation instead. Runtime dependency
+       auditing remains enabled in every upstream project. -->
+  <ItemGroup><PackageReference Remove="Microsoft.SourceLink.GitHub" /></ItemGroup>
+</Project>

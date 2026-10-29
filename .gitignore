@@ -10,6 +10,7 @@ dist/
 !.env.example
 *.log
 node_modules/
+src/FootprintLinker/Web/vendor/
 state.dat
 state.dat.bak
 session.lock

@@ -9,7 +9,12 @@ jobs:
   test:
     runs-on: windows-latest
     steps:
+      - name: Enable long Git paths on the build runner
+        shell: pwsh
+        run: git config --global core.longpaths true
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -18,4 +23,7 @@ jobs:
           node-version: '24'
       - name: Backend and frontend tests
         shell: pwsh
-        run: ./scripts/test.ps1
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend dependencies failed' }
+          ./scripts/test.ps1

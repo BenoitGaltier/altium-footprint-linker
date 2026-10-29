@@ -1,0 +1,8 @@
+{
+  "name": "altium-footprint-linker",
+  "private": true,
+  "version": "1.2.0",
+  "type": "module",
+  "scripts": { "vendor": "node scripts/vendor.mjs", "test": "node --test tests/web.test.mjs" },
+  "dependencies": { "three": "0.186.1" }
+}

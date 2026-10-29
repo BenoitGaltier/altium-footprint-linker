@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 let key = new URLSearchParams(location.hash.slice(1)).get('session') || sessionStorage.getItem('linkerSession');
 if (key) sessionStorage.setItem('linkerSession', key);
 history.replaceState(null, '', location.pathname);
+let previewViewer = null;
 let plan = null, reportPlan = null, latest = null, busy = false, connected = false, selected = new Set(), runningJob = null;
 const messages = {
   invalidEndpoint:'URL invalide : utilisez une URL HTTPS de workspace Altium.', invalidToken:'Saisissez un token API valide.',
@@ -13,6 +14,7 @@ const messages = {
   csvColumns:'Le nombre de colonnes du CSV est incohérent.', csvQuotes:'Les guillemets du CSV sont mal fermés.', csvEmpty:'Le CSV ne contient aucune ligne de données.', csvTooLarge:'CSV trop volumineux (10 Mo / 50 000 lignes maximum).',
   connectFirst:'Connectez le workspace avant de lancer l’analyse.', selectFolder:'Choisissez un dossier d’empreintes dans le workspace.',
   invalidMatchField:'Saisissez le nom du champ Altium à comparer à Item (128 caractères maximum).',
+  previewUnavailable:'Aucun fichier d’empreinte unique n’est disponible pour cet aperçu.', previewReadFailed:'Le fichier .PcbLib n’a pas pu être lu pour la visualisation.', previewEmpty:'L’empreinte ne contient aucune primitive visualisable.', previewTooLarge:'L’empreinte dépasse les limites de l’aperçu.',
   pickerPlatform:'Le sélecteur de répertoire nécessite Windows.', pickerBusy:'Un sélecteur de répertoire est déjà ouvert.', pickerFailed:'Le sélecteur Windows n’a pas pu être ouvert. Vous pouvez saisir le chemin du répertoire.',
   destinationNotFound:'Impossible de déduire un dossier d’empreintes pour ce composant.', destinationAmbiguous:'Plusieurs dossiers de destination sont possibles pour ce composant.', destinationChanged:'Le dossier déduit du composant a changé. Relancez l’analyse.',
   defaultFootprint:'Dossier de l’empreinte par défaut', existingFootprints:'Dossier des empreintes existantes', componentFolder:'Classement du composant',
@@ -52,7 +54,7 @@ function controls() {
 function fieldLabels(field = $('matchField').value.trim() || 'AU_ID') {
   $('matchFieldDisplay').textContent = field; $('matchFieldFlow').textContent = field; $('matchFieldHeader').textContent = 'Item / ' + field;
 }
-function invalidate() { plan = null; selected.clear(); $('results').hidden = true; controls(); }
+function invalidate() { previewViewer?.close(); plan = null; selected.clear(); $('results').hidden = true; controls(); }
 function download(name, content, type = 'application/json') {
   const url = URL.createObjectURL(new Blob([content], {type})); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -75,7 +77,7 @@ async function refresh() {
 function render() {
   if (!plan) return;
   const visible = visibleRows(plan.rows, $('search').value, $('filter').value);
-  $('rows').innerHTML = visible.map(r => `<tr><td><input type="checkbox" data-id="${e(r.id)}" ${selected.has(r.id) ? 'checked' : ''} ${r.status === 'ready' ? '' : 'disabled'} aria-label="Sélectionner ${e(r.csv.item)} ${e(r.componentName)}"></td><td><strong>${e(r.csv.item || '—')}</strong><small>Ligne ${r.csv.line} · ${e(r.csv.description)}</small><small>${e(r.csv.supplierName)} ${e(r.csv.supplierItemNo)}</small></td><td>${e(r.componentName || '—')}<small>${e(r.revision)} ${r.matches > 1 ? ' · ' + e(plan.matchField) + ' partagé par ' + r.matches + ' composants' : ''}</small><small>Actuelles : ${e(r.existingFootprints.join(', ') || '—')}</small></td><td>${e(r.internalName || r.csv.footprint || '—')}<small>${e(r.file?.relativePath || '')}</small></td><td>${e(r.destination?.path || '—')}<small>${e(r.destinationSource ? message(r.destinationSource) : '')}</small></td><td><span class="status ${e(r.status)}">${e(message(r.status))}</span>${r.reason ? '<small>' + e(message(r.reason)) + '</small>' : ''}</td></tr>`).join('') || '<tr><td colspan="6">Aucune correspondance pour ce filtre.</td></tr>';
+  $('rows').innerHTML = visible.map(r => `<tr><td><input type="checkbox" data-id="${e(r.id)}" ${selected.has(r.id) ? 'checked' : ''} ${r.status === 'ready' ? '' : 'disabled'} aria-label="Sélectionner ${e(r.csv.item)} ${e(r.componentName)}"></td><td><strong>${e(r.csv.item || '—')}</strong><small>Ligne ${r.csv.line} · ${e(r.csv.description)}</small><small>${e(r.csv.supplierName)} ${e(r.csv.supplierItemNo)}</small></td><td>${e(r.componentName || '—')}<small>${e(r.revision)} ${r.matches > 1 ? ' · ' + e(plan.matchField) + ' partagé par ' + r.matches + ' composants' : ''}</small><small>Actuelles : ${e(r.existingFootprints.join(', ') || '—')}</small></td><td>${e(r.internalName || r.csv.footprint || '—')}<small>${e(r.file?.relativePath || '')}</small>${r.file && r.internalName ? `<button type="button" class="quiet preview-button" data-preview="${e(r.id)}">Voir 2D / 3D</button>` : ''}</td><td>${e(r.destination?.path || '—')}<small>${e(r.destinationSource ? message(r.destinationSource) : '')}</small></td><td><span class="status ${e(r.status)}">${e(message(r.status))}</span>${r.reason ? '<small>' + e(message(r.reason)) + '</small>' : ''}</td></tr>`).join('') || '<tr><td colspan="6">Aucune correspondance pour ce filtre.</td></tr>';
   $('total').textContent = new Set(plan.rows.filter(r => r.componentId).map(r => r.componentId)).size;
   for (const [id,status] of [['ready','ready'],['linked','alreadyLinked'],['blocked','blocked']]) $(''+id).textContent = plan.rows.filter(r => r.status === status).length;
   $('selection').textContent = selected.size + ' association(s) sélectionnée(s)';
@@ -131,6 +133,11 @@ $('analyze').addEventListener('click', () => run(async () => {
   busy = true; controls(); await poll(await api('analyze', 'POST', {csv:text, directory:$('directory').value, matchField:$('matchField').value}));
 }));
 $('rows').addEventListener('change', event => { const id = event.target.dataset.id; if (!id) return; if (event.target.checked) selected.add(id); else selected.delete(id); render(); });
+$('rows').addEventListener('click', async event => {
+  const button=event.target.closest('button[data-preview]'); if(!button||!plan)return;
+  try { previewViewer ??= (await import('./preview.mjs')).createPreview(api); await previewViewer.open(plan.id,button.dataset.preview); }
+  catch(error) { notice(error.message,true); }
+});
 $('selectAll').addEventListener('change', () => { for (const row of visibleRows(plan.rows, $('search').value, $('filter').value).filter(r => r.status === 'ready')) { if ($('selectAll').checked) selected.add(row.id); else selected.delete(row.id); } render(); });
 for (const id of ['search','filter']) $(id).addEventListener('input', render);
 $('apply').addEventListener('click', () => { $('confirmText').textContent = selected.size + ' association(s) sélectionnée(s) dans ' + new URL(plan.endpoint).host + '.'; $('confirm').showModal(); });

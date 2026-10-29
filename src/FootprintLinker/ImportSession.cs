@@ -28,7 +28,7 @@ public sealed class ImportSession
     private StoredState state = new(1, null, null, null, []);
     private LibraryFolder[] folders = [];
     private bool connected;
-    private ImportPlan? plan; private ImportJob? job; private string? storageError;
+    private ImportPlan? plan; private ImportPlan? previewPlan; private ImportJob? job; private string? storageError;
     public ImportSession(AltiumClient altium, IHostApplicationLifetime lifetime, LocalStore? store = null)
     {
         this.altium = altium; this.store = store; this.lifetime = lifetime;
@@ -65,7 +65,7 @@ public sealed class ImportSession
             {
                 var old = state; state = state with { Connection = connected };
                 try { Persist(); } catch { state = old; throw; }
-                folders = availableFolders; this.connected = true; plan = null;
+                folders = availableFolders; this.connected = true; plan = null; previewPlan = null;
             }
             return connected.Info;
         }
@@ -85,7 +85,7 @@ public sealed class ImportSession
             {
                 var old = state; state = state with { Directory = directory, MatchField = matchField, FolderId = null };
                 try { Persist(); } catch { state = old; throw; }
-                job?.Cancellation.Dispose(); job = new("analyze"); plan = null;
+                job?.Cancellation.Dispose(); job = new("analyze"); plan = null; previewPlan = null;
             }
             _ = RunAnalysis(job, connection, csv, directory, matchField);
             return job.Snapshot();
@@ -102,7 +102,7 @@ public sealed class ImportSession
             {
                 var previous = state; state = state with { MatchField = field };
                 try { Persist(); } catch { state = previous; throw; }
-                if (previous.MatchField != field) plan = null;
+                if (previous.MatchField != field) { plan = null; previewPlan = null; }
             }
         }
         finally { gate.Release(); }
@@ -145,7 +145,7 @@ public sealed class ImportSession
                     Reason = !linkedAlready && destination.Folder is null ? destination.Source : null };
             }).ToArray();
             var result = new ImportPlan(Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow, connection.Info.Endpoint, directory, matchField, rows, diagnostics, warnings.ToArray());
-            lock (sync) plan = result;
+            lock (sync) { plan = result; previewPlan = result; }
             current.Complete(result);
         }
         catch (OperationCanceledException) { current.Fail("cancelled"); }
@@ -267,6 +267,15 @@ public sealed class ImportSession
         catch (Exception) { lock (sync) plan = null; current.Fail("importFailed"); }
     }
     public ImportJob Job(string id) { lock (sync) return job?.Id == id ? job : throw new AppException("jobNotFound", status: 404); }
+    public PlanRow PreviewRow(PreviewRequest request)
+    {
+        lock (sync)
+        {
+            if (previewPlan?.Id != request.PlanId || previewPlan.Endpoint != state.Connection?.Info.Endpoint) throw new AppException("planExpired", status: 409);
+            return previewPlan.Rows.SingleOrDefault(r => r.Id == request.RowId && r.File is not null && r.InternalName is not null)
+                ?? throw new AppException("previewUnavailable", status: 404);
+        }
+    }
     public async Task Recover(RecoveryRequest request, CancellationToken ct)
     {
         await gate.WaitAsync(ct);
@@ -295,7 +304,7 @@ public sealed class ImportSession
     public async Task Forget(CancellationToken ct)
     {
         await gate.WaitAsync(ct);
-        try { Idle(); lock (sync) { store?.Clear(); state = new(1, null, null, null, []); folders = []; connected = false; plan = null; storageError = null; } }
+        try { Idle(); lock (sync) { store?.Clear(); state = new(1, null, null, null, []); folders = []; connected = false; plan = null; previewPlan = null; storageError = null; } }
         finally { gate.Release(); }
     }
 }

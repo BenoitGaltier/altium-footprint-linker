@@ -15,6 +15,18 @@ Téléchargez le ZIP de la [dernière version](https://github.com/BenoitGaltier/
 5. Cochez les associations voulues puis cliquez sur **2. Ajouter aux composants sélectionnés**. Aucune ligne n’est présélectionnée. Le dialogue récapitule le workspace et le nombre d’associations.
 6. Exportez le rapport JSON pour conserver les correspondances, les résultats et le journal.
 
+Chaque empreinte locale reconnue possède un bouton **Voir 2D / 3D**. L’aperçu se calcule sur la machine, directement depuis le `.PcbLib`, sans lancer Altium et sans envoyer de fichier à un service de visualisation.
+
+## Visualisation 2D et 3D
+
+- **Vue 2D** : dessin vectoriel SVG des primitives de l’empreinte sélectionnée. Molette pour zoomer, glisser pour déplacer, **Recentrer** pour retrouver la vue initiale et **Exporter SVG** pour enregistrer le dessin.
+- **Vue 3D** : pastilles, traits, perçages et modèles STEP embarqués, convertis localement en maillages. Glisser pour tourner, clic droit pour déplacer, molette pour zoomer. Le navigateur doit disposer de WebGL 2. Les corps extrudés définis par un contour et leurs hauteurs sont également affichés.
+- La sélection utilise le nom interne demandé dans le CSV, y compris dans une bibliothèque à plusieurs empreintes. Le hash du fichier est revérifié avant le rendu, comme avant l’import.
+- Les modèles externes absents, corps non pris en charge ou échecs de conversion sont signalés. Si aucun corps 3D exploitable n’existe, la vue 3D affiche les primitives disponibles de l’empreinte avec un avertissement. Aucun boîtier n’est inventé à partir du nom du composant.
+- **Exporter GLB** est disponible pour la scène 3D convertie. Il est désactivé lorsqu’elle contient des corps extrudés ajoutés par le visualiseur, qui ne sont pas inclus dans ce fichier GLB.
+
+La vue est un outil de contrôle visuel, pas une qualification des dimensions de fabrication. Les perçages sont représentés avec une épaisseur de support conventionnelle ; les textures externes et tous les types de corps ne sont pas pris en charge. Le rendu utilise AltiumSharp/OriginalCircuit et Three.js, embarqués dans l’exécutable ; il ne dépend pas d’Altium Designer.
+
 ```csv
 Item;Description;Supplier;Supplier Name;Supplier Item No;footprint
 00042;Example component;SUP;Example supplier;REF-001;SOT-23
@@ -57,14 +69,28 @@ Les tokens ne sont ni renvoyés par l’API locale, ni inclus dans les rapports,
 
 ## Développement
 
-Prérequis : .NET SDK 10 et Node.js 22+ pour les tests du frontend. L’application n’a aucune dépendance tierce. La lecture/extraction native des `.PcbLib` utilise Windows Structured Storage.
+Prérequis de développement : .NET SDK 10, Node.js 22+ et Git. Les dépendances de rendu sont figées dans les sous-modules Git et `package-lock.json` ; elles sont embarquées dans le ZIP portable. La lecture/extraction pour l’import utilise Windows Structured Storage. Les licences sont regroupées dans [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ```powershell
+git -c core.longpaths=true clone --recurse-submodules https://github.com/BenoitGaltier/altium-footprint-linker.git
+cd altium-footprint-linker
+npm ci
+npm run vendor
 ./scripts/test.ps1
 dotnet run --project src/FootprintLinker
 ./scripts/publish.ps1
 ./scripts/smoke.ps1
 ```
+
+Dans une copie existante : `git -c core.longpaths=true submodule update --init --recursive`, puis `npm ci`. Le Source Link fourni par le SDK .NET 10 remplace la référence explicite obsolète du projet amont ; les audits de dépendances restent actifs.
+
+L’export local peut aussi fonctionner sans token de workspace :
+
+```powershell
+./FootprintLinker.exe --render-preview C:\Libraries\package.PcbLib SOT-23 C:\Previews\SOT23
+```
+
+Cette commande produit `preview.svg`, `preview.glb` et les métadonnées dans `preview.json`.
 
 Options : `--headless`, `--port 4178`, `--data-dir PATH`, `--no-persistence`. Ce dernier mode permet l’analyse mais bloque les imports car ils requièrent un journal durable. Les tests utilisent des dossiers isolés et un serveur Altium simulé ; ils ne contactent ni ne modifient un workspace réel.
 

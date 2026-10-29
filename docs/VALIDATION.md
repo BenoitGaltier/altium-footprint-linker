@@ -6,7 +6,7 @@ La suite utilise uniquement des identifiants fictifs, un handler HTTP Altium sim
 
 ## Tests automatisés
 
-`scripts/test.ps1` exécute 27 cas backend et 5 cas frontend :
+`scripts/test.ps1` exécute 30 cas backend et 5 cas frontend :
 
 - CSV : séparateurs, BOM, colonnes réordonnées, guillemets, champs multilignes, rejets d’entrées incohérentes et conservation des zéros initiaux.
 - AU_ID : valeur de révision, héritage item, valeur vide, paramètres contradictoires, tous les composants correspondants, doublons CSV et noms de fichiers ambigus.
@@ -21,8 +21,9 @@ La suite utilise uniquement des identifiants fictifs, un handler HTTP Altium sim
 - Arborescence locale : lecture d’une bibliothèque dans un sous-dossier, chemin relatif conservé, aucun départage des noms identiques par chemin.
 - Sélecteur système : contrat HTTP testé avec un sélecteur injecté pour les réponses de sélection et d’annulation. Le dialogue Windows utilise `IFileDialog` en mode `FOS_PICKFOLDERS` sur un thread STA. Le choix interactif dans ce dialogue requiert un essai manuel dans une session Windows graphique ; il n’est pas automatisé dans la suite.
 - Compatibilité : chargement d’un fichier chiffré 1.0.0, `AU_ID` par défaut, ancienne destination globale ignorée, changement de champ invalidant l’analyse précédente.
+- Visualisation 1.2.0 : lecture de l’empreinte demandée parmi plusieurs modèles d’un `.PcbLib`, rendu SVG valide, conversion d’un boîtier STEP synthétique de 2 × 1,4 × 1,2 mm en douze triangles, signalement des modèles absents/externes, prise en compte de la hauteur totale et du standoff des corps extrudés, refus des plans inconnus et des fichiers modifiés. Les aperçus n’effectuent aucune écriture Altium.
 
-`scripts/smoke.ps1` vérifie le véritable exécutable autonome : cinq ressources embarquées, rejet de l’accès anonyme, état local isolé, rejet d’une origine étrangère et arrêt propre, soit 9 contrôles HTTP.
+`scripts/smoke.ps1` vérifie le véritable exécutable autonome : ressources embarquées, rejet de l’accès anonyme, état local isolé, rejet d’une origine étrangère et arrêt propre. Quatre contrôles supplémentaires exécutent `--render-preview` sur la fixture puis vérifient les métadonnées, le SVG et le GLB ; aucune connexion de workspace n’est fournie et aucun Altium n’est utilisé.
 
 Les workflows GitHub répètent les tests sur Windows. Le workflow de release vérifie la version du tag, construit le ZIP avec runtime inclus, exécute le test du binaire et publie uniquement si ces étapes réussissent.
 
@@ -31,6 +32,8 @@ Les workflows GitHub répètent les tests sur Windows. Le workflow de release v�
 Le parcours a été exécuté dans le navigateur intégré sur le workspace fictif explicitement marqué **SIMULATION** : affichage de deux correspondances pour un AU_ID commun, sélection des deux lignes, confirmation, import simulé puis affichage de deux associations vérifiées sans échec. La mise en page a été inspectée dans une fenêtre étroite et la fermeture depuis **Quitter** vérifiée. Aucune écriture sur un workspace réel n’a été effectuée.
 
 Pour la version 1.1.0, le parcours a été vérifié avec une bibliothèque dans `local-libraries/Transistors/source.PcbLib` : chargement du CSV, sélection du répertoire via le sélecteur simulé, analyse, affichage des destinations déduites, sélection d’un seul des deux composants et ajout vérifié sur cette sélection. Le champ configurable et ses libellés ont été modifiés dans l’interface. Les deux boutons d’action restent visibles ; aucune ligne n’est présélectionnée.
+
+Pour la version 1.2.0, les deux onglets d’aperçu ont été ouverts dans le navigateur : les trois pastilles et le contour apparaissent dans le SVG ; le boîtier STEP et les primitives apparaissent en 3D. Le nom, le chemin relatif, les dimensions 2D et le nombre de modèles STEP convertis sont affichés. Les modèles de cette vérification sont synthétiques.
 
 ## Périmètre à qualifier avec des données réelles
 
