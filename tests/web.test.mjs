@@ -8,3 +8,7 @@ test('filters preserve AU_ID leading zeros and supplier searches',()=>{
 });
 test('CSV exports neutralize formula prefixes and quote embedded separators',()=>{assert.equal(csvCell('=HYPERLINK("x")'),'"\'=HYPERLINK(""x"")"');assert.equal(csvCell('00042'),'"00042"');});
 test('example uses the exact six required columns',()=>assert.equal(exampleCsv.split('\r\n')[0],'\uFEFFItem;Description;Supplier;Supplier Name;Supplier Item No;footprint'));
+test('the inferred destination can be searched without changing the row selection data',()=>{
+ const row={id:'keep-id',status:'ready',csv:{item:'00042'},destination:{path:'Components/Models/Footprints/Passives/Resistors'}};
+ assert.equal(visibleRows([row],'passives/resistors','all')[0],row);
+});

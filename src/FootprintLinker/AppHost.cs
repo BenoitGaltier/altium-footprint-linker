@@ -6,7 +6,7 @@ namespace FootprintLinker;
 
 public static class AppHost
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.1.0";
     public static WebApplication Build(string[] args, Action<IServiceCollection>? configure = null)
     {
         var port = 0;
@@ -26,6 +26,7 @@ public static class AppHost
         builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
         builder.Services.AddSingleton(new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(90) });
         builder.Services.AddSingleton<AltiumClient>();
+        builder.Services.AddSingleton<IDirectoryPicker, WindowsDirectoryPicker>();
         if (!args.Contains("--no-persistence")) builder.Services.AddSingleton(_ => new LocalStore(directory));
         builder.Services.AddSingleton<ImportSession>();
         configure?.Invoke(builder.Services);
@@ -61,8 +62,10 @@ public static class AppHost
         });
         app.MapGet("/api/session", (ImportSession session) => session.Current());
         app.MapPost("/api/connect", async (ConnectRequest input, ImportSession session, CancellationToken ct) => await session.Connect(input, ct));
+        app.MapPost("/api/preferences", async (PreferencesRequest input, ImportSession session, CancellationToken ct) => { await session.SetPreferences(input, ct); return Results.Ok(); });
         app.MapDelete("/api/local-data", async (ImportSession session, CancellationToken ct) => { await session.Forget(ct); return Results.Ok(); });
         app.MapPost("/api/analyze", async (AnalyzeRequest input, ImportSession session, CancellationToken ct) => await session.Analyze(input, ct));
+        app.MapPost("/api/directory/pick", async (DirectoryPickRequest input, IDirectoryPicker picker, CancellationToken ct) => await picker.Pick(input.Directory, ct));
         app.MapPost("/api/apply", async (ApplyRequest input, ImportSession session, CancellationToken ct) => await session.Apply(input, ct));
         app.MapPost("/api/recover", async (RecoveryRequest input, ImportSession session, CancellationToken ct) => { await session.Recover(input, ct); return Results.Ok(); });
         app.MapGet("/api/jobs/{id}", (string id, ImportSession session) => session.Job(id).Snapshot());

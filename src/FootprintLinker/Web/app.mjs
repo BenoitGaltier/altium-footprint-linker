@@ -12,9 +12,13 @@ const messages = {
   csvHeaders:'En-têtes requis : Item, Description, Supplier, Supplier Name, Supplier Item No, footprint.',
   csvColumns:'Le nombre de colonnes du CSV est incohérent.', csvQuotes:'Les guillemets du CSV sont mal fermés.', csvEmpty:'Le CSV ne contient aucune ligne de données.', csvTooLarge:'CSV trop volumineux (10 Mo / 50 000 lignes maximum).',
   connectFirst:'Connectez le workspace avant de lancer l’analyse.', selectFolder:'Choisissez un dossier d’empreintes dans le workspace.',
+  invalidMatchField:'Saisissez le nom du champ Altium à comparer à Item (128 caractères maximum).',
+  pickerPlatform:'Le sélecteur de répertoire nécessite Windows.', pickerBusy:'Un sélecteur de répertoire est déjà ouvert.', pickerFailed:'Le sélecteur Windows n’a pas pu être ouvert. Vous pouvez saisir le chemin du répertoire.',
+  destinationNotFound:'Impossible de déduire un dossier d’empreintes pour ce composant.', destinationAmbiguous:'Plusieurs dossiers de destination sont possibles pour ce composant.', destinationChanged:'Le dossier déduit du composant a changé. Relancez l’analyse.',
+  defaultFootprint:'Dossier de l’empreinte par défaut', existingFootprints:'Dossier des empreintes existantes', componentFolder:'Classement du composant',
   directoryMissing:'Le répertoire local est introuvable.', directoryUnreadable:'Le répertoire ou un sous-répertoire est inaccessible.', directoryTooLarge:'Le répertoire contient trop de fichiers.',
   emptyItem:'Item vide', emptyFootprint:'Nom d’empreinte vide', duplicateCsvRow:'Paire Item / footprint répétée dans le CSV',
-  fileNotFound:'Nom interne introuvable dans les .PcbLib du répertoire', ambiguousFile:'Ce nom figure dans plusieurs fichiers : gardez une source unique', componentNotFound:'Aucun composant avec cet AU_ID',
+  fileNotFound:'Nom interne introuvable dans les .PcbLib de l’arborescence', ambiguousFile:'Ce nom figure dans plusieurs fichiers de l’arborescence : gardez une source unique', componentNotFound:'Aucun composant ne correspond à Item dans le champ configuré',
   componentChanged:'Le composant a changé depuis l’analyse. Relancez l’analyse.', fileChanged:'Le fichier a changé depuis l’analyse. Relancez l’analyse.',
   planExpired:'Le tableau doit être actualisé. Relancez une analyse.', partialPlan:'L’analyse contient des avertissements. Résolvez-les avant l’import.',
   creationOutcomeUnknown:'Création précédente incertaine. Vérifiez Altium et renseignez le journal de reprise.', linkOutcomeUnknown:'Association précédente incertaine. Vérifiez Altium puis renseignez le journal.',
@@ -23,7 +27,7 @@ const messages = {
   persistenceRequired:'L’import requiert la sauvegarde chiffrée du journal. Relancez sans --no-persistence.',
   storageInUse:'Une autre instance utilise ce dossier de données.', storageRead:'La sauvegarde chiffrée est illisible. Elle est conservée.', storageCrypto:'Échec du chiffrement Windows. Les données existantes sont conservées.', storageWrite:'Impossible d’enregistrer le journal chiffré.',
   recoveryMismatch:'L’empreinte ne correspond pas au nom ou au dossier attendu.', recoveryInvalid:'La clé du journal n’est pas une opération incertaine.',
-  indexing:'Indexation des bibliothèques locales', listing:'Lecture de l’inventaire Altium', verifying:'Vérification de l’inventaire', details:'Lecture des champs AU_ID', matching:'Vérification des composants et empreintes existantes', importing:'Import et vérification des associations', finished:'Traitement terminé', starting:'Démarrage',
+  indexing:'Indexation des bibliothèques de toute l’arborescence locale', listing:'Lecture de l’inventaire Altium', verifying:'Vérification de l’inventaire', details:'Lecture du champ de correspondance', matching:'Vérification des composants et déduction des destinations', importing:'Import et vérification des associations', finished:'Traitement terminé', starting:'Démarrage',
   ready:'Prête', blocked:'À vérifier', alreadyLinked:'Déjà associée', imported:'Ajout vérifié', failed:'Échec', unknown:'Résultat incertain', cancelled:'Traitement arrêté',
   unreadParameters:'Certains paramètres n’ont pas pu être lus. L’import est bloqué tant que la lecture n’est pas complète.', reportedCountMismatch:'Le nombre de composants diffère du total annoncé par Altium.', reportedTotalChanged:'Le total Altium a changé pendant la lecture.', componentChangedDuringScan:'Un composant a changé pendant la lecture.',
   analysisFailed:'L’analyse a échoué.', importFailed:'L’import a échoué. Consultez le journal de reprise.', jobRunning:'Un traitement est déjà en cours.'
@@ -38,42 +42,47 @@ async function api(path, method = 'GET', body) {
   return data;
 }
 function controls() {
-  $('analyze').disabled = busy || !connected || !$('csv').files.length || !$('folder').value || !$('directory').value.trim();
+  $('analyze').disabled = busy || !connected || !$('csv').files.length || !$('directory').value.trim() || !$('matchField').value.trim();
   $('connect').disabled = busy; $('csv').disabled = busy; $('encoding').disabled = busy; $('endpoint').disabled = busy;
-  $('name').disabled = busy; $('token').disabled = busy; $('folder').disabled = busy; $('directory').disabled = busy;
-  $('forget').disabled = busy; $('cancel').hidden = !busy; $('apply').disabled = busy || !plan || !selected.size || plan.warnings.length > 0;
+  $('name').disabled = busy; $('token').disabled = busy; $('matchField').disabled = busy; $('directory').disabled = busy; $('browse').disabled = busy;
+  $('forget').disabled = busy; $('cancel').hidden = !runningJob; $('apply').disabled = busy || !plan || !selected.size || plan.warnings.length > 0;
+  $('selectAll').disabled = busy || !plan;
+  for (const input of $('rows').querySelectorAll('input[data-id]')) input.disabled = busy || plan?.rows.find(r => r.id === input.dataset.id)?.status !== 'ready';
 }
+function fieldLabels(field = $('matchField').value.trim() || 'AU_ID') {
+  $('matchFieldDisplay').textContent = field; $('matchFieldFlow').textContent = field; $('matchFieldHeader').textContent = 'Item / ' + field;
+}
+function invalidate() { plan = null; selected.clear(); $('results').hidden = true; controls(); }
 function download(name, content, type = 'application/json') {
   const url = URL.createObjectURL(new Blob([content], {type})); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function refresh() {
   const state = await api('session');
-  connected = Boolean(state.connection && state.folders.length);
+  connected = Boolean(state.connected);
   if (state.connection) {
     $('name').value = state.connection.name; $('endpoint').value = state.connection.endpoint;
     $('connected').textContent = connected ? 'Connecté · ' + state.connection.componentCount : 'Connexion sauvegardée';
     $('savedHint').textContent = 'Token sauvegardé et chiffré. Laissez vide pour le réutiliser avec cette URL.';
   }
   if (state.directory && !$('directory').value) $('directory').value = state.directory;
-  $('folder').innerHTML = '<option value="">' + (state.folders.length ? 'Choisir le dossier de destination' : 'Connecter le workspace d’abord') + '</option>' + state.folders.map(f => `<option value="${e(f.id)}">${e(f.path)}</option>`).join('');
-  if (state.folderId) $('folder').value = state.folderId;
+  $('matchField').value = state.matchField || 'AU_ID'; fieldLabels();
   $('storagePath').textContent = state.dataDirectory || 'Mode sans sauvegarde : l’import est désactivé.';
   $('journal').textContent = JSON.stringify(state.journal, null, 2);
   if (state.storageError) notice(message(state.storageError), true);
-  if (state.connection && !state.folders.length) notice('Connexion sauvegardée. Cliquez sur « Connecter le workspace » pour vérifier le token et charger les dossiers.');
+  if (state.connection && !connected) notice('Connexion sauvegardée. Cliquez sur « Connecter le workspace » pour vérifier le token.');
   controls(); return state;
 }
 function render() {
   if (!plan) return;
   const visible = visibleRows(plan.rows, $('search').value, $('filter').value);
-  $('rows').innerHTML = visible.map(r => `<tr><td><input type="checkbox" data-id="${e(r.id)}" ${selected.has(r.id) ? 'checked' : ''} ${r.status === 'ready' ? '' : 'disabled'} aria-label="Sélectionner ${e(r.csv.item)} ${e(r.componentName)}"></td><td><strong>${e(r.csv.item || '—')}</strong><small>Ligne ${r.csv.line} · ${e(r.csv.description)}</small><small>${e(r.csv.supplierName)} ${e(r.csv.supplierItemNo)}</small></td><td>${e(r.componentName || '—')}<small>${e(r.revision)} ${r.matches > 1 ? ' · AU_ID partagé par ' + r.matches + ' composants' : ''}</small><small>Actuelles : ${e(r.existingFootprints.join(', ') || '—')}</small></td><td>${e(r.internalName || r.csv.footprint || '—')}<small>${e(r.file?.relativePath || '')}</small></td><td><span class="status ${e(r.status)}">${e(message(r.status))}</span>${r.reason ? '<small>' + e(message(r.reason)) + '</small>' : ''}</td></tr>`).join('') || '<tr><td colspan="5">Aucune correspondance pour ce filtre.</td></tr>';
-  $('total').textContent = plan.rows.length;
+  $('rows').innerHTML = visible.map(r => `<tr><td><input type="checkbox" data-id="${e(r.id)}" ${selected.has(r.id) ? 'checked' : ''} ${r.status === 'ready' ? '' : 'disabled'} aria-label="Sélectionner ${e(r.csv.item)} ${e(r.componentName)}"></td><td><strong>${e(r.csv.item || '—')}</strong><small>Ligne ${r.csv.line} · ${e(r.csv.description)}</small><small>${e(r.csv.supplierName)} ${e(r.csv.supplierItemNo)}</small></td><td>${e(r.componentName || '—')}<small>${e(r.revision)} ${r.matches > 1 ? ' · ' + e(plan.matchField) + ' partagé par ' + r.matches + ' composants' : ''}</small><small>Actuelles : ${e(r.existingFootprints.join(', ') || '—')}</small></td><td>${e(r.internalName || r.csv.footprint || '—')}<small>${e(r.file?.relativePath || '')}</small></td><td>${e(r.destination?.path || '—')}<small>${e(r.destinationSource ? message(r.destinationSource) : '')}</small></td><td><span class="status ${e(r.status)}">${e(message(r.status))}</span>${r.reason ? '<small>' + e(message(r.reason)) + '</small>' : ''}</td></tr>`).join('') || '<tr><td colspan="6">Aucune correspondance pour ce filtre.</td></tr>';
+  $('total').textContent = new Set(plan.rows.filter(r => r.componentId).map(r => r.componentId)).size;
   for (const [id,status] of [['ready','ready'],['linked','alreadyLinked'],['blocked','blocked']]) $(''+id).textContent = plan.rows.filter(r => r.status === status).length;
-  $('selection').textContent = selected.size + ' ligne(s) sélectionnée(s)';
+  $('selection').textContent = selected.size + ' association(s) sélectionnée(s)';
   $('selectAll').checked = visible.some(r => r.status === 'ready') && visible.filter(r => r.status === 'ready').every(r => selected.has(r.id));
   $('warnings').hidden = !plan.warnings.length; $('warnings').textContent = plan.warnings.map(message).join('\n');
   $('planDate').textContent = 'Analyse du ' + new Date(plan.createdAt).toLocaleString('fr-FR') + ' · ' + plan.diagnostics.distinctComponents + ' composants lus · ' + plan.diagnostics.pages + ' page(s)';
-  $('results').hidden = false; controls();
+  fieldLabels(plan.matchField); $('results').hidden = false; controls();
 }
 async function poll(job) {
   runningJob = job.id; busy = true; controls(); $('progressSection').hidden = false;
@@ -85,7 +94,7 @@ async function poll(job) {
       latest = current; $('export').disabled = false;
       if (current.status !== 'completed') throw Error(message(current.error));
       if (current.kind === 'analyze') {
-        plan = current.result; reportPlan = plan; selected = new Set(plan.rows.filter(r => r.status === 'ready' && r.matches === 1).map(r => r.id));
+        plan = current.result; reportPlan = plan; selected = new Set();
         $('outcome').hidden = true; render(); notice('Analyse terminée. Vérifiez les correspondances et sélectionnez les lignes à importer.');
       } else {
         const result = current.result; reportPlan = result.plan || plan; $('outcome').hidden = false;
@@ -100,16 +109,26 @@ async function poll(job) {
   }
 }
 async function run(task) { try { await task(); } catch (error) { notice(error.message, true); } finally { busy = false; runningJob = null; $('progressSection').hidden = true; controls(); } }
-$('connection').addEventListener('submit', event => { event.preventDefault(); run(async () => { busy = true; controls(); notice('Connexion au workspace…'); await api('connect', 'POST', {name:$('name').value, endpoint:$('endpoint').value, token:$('token').value}); plan = null; $('results').hidden = true; await refresh(); notice('Workspace connecté. Choisissez votre CSV, le répertoire et le dossier de destination.'); }); $('token').value = ''; });
-for (const id of ['csv','encoding','directory','folder','endpoint']) $(id).addEventListener('change', () => { plan = null; selected.clear(); $('results').hidden = true; controls(); });
-$('directory').addEventListener('input', controls);
+$('connection').addEventListener('submit', event => { event.preventDefault(); run(async () => { busy = true; controls(); notice('Connexion au workspace…'); await api('connect', 'POST', {name:$('name').value, endpoint:$('endpoint').value, token:$('token').value}); plan = null; $('results').hidden = true; await refresh(); notice('Workspace connecté. Choisissez le CSV, le champ de correspondance et le répertoire racine des empreintes.'); }); $('token').value = ''; });
+for (const id of ['csv','encoding','directory','endpoint']) $(id).addEventListener('change', invalidate);
+$('directory').addEventListener('input', invalidate);
+$('matchField').addEventListener('input', () => { invalidate(); fieldLabels(); });
+$('matchField').addEventListener('change', () => {
+  const field = $('matchField').value.trim();
+  api('preferences','POST',{matchField:field}).then(() => { if ($('matchField').value.trim() === field) { $('matchField').value = field; fieldLabels(); } }).catch(error => notice(error.message,true));
+});
+$('browse').addEventListener('click', () => run(async () => {
+  busy = true; controls(); const picked = await api('directory/pick','POST',{directory:$('directory').value});
+  if (!picked.cancelled && picked.directory) { $('directory').value = picked.directory; invalidate(); notice('Répertoire sélectionné. L’analyse parcourra tous ses sous-dossiers.'); }
+}));
 $('csv').addEventListener('change', () => { $('csvName').textContent = $('csv').files[0]?.name || 'Choisir un fichier CSV'; });
 $('analyze').addEventListener('click', () => run(async () => {
   const file = $('csv').files[0]; if (!file) return;
+  busy = true; controls();
   if (file.size > 10_000_000) throw Error(message('csvTooLarge'));
   const text = new TextDecoder($('encoding').value, {fatal:true}).decode(await file.arrayBuffer());
   plan = null; selected.clear(); $('results').hidden = true;
-  busy = true; controls(); await poll(await api('analyze', 'POST', {csv:text, directory:$('directory').value, folderId:$('folder').value}));
+  busy = true; controls(); await poll(await api('analyze', 'POST', {csv:text, directory:$('directory').value, matchField:$('matchField').value}));
 }));
 $('rows').addEventListener('change', event => { const id = event.target.dataset.id; if (!id) return; if (event.target.checked) selected.add(id); else selected.delete(id); render(); });
 $('selectAll').addEventListener('change', () => { for (const row of visibleRows(plan.rows, $('search').value, $('filter').value).filter(r => r.status === 'ready')) { if ($('selectAll').checked) selected.add(row.id); else selected.delete(row.id); } render(); });

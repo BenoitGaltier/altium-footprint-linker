@@ -28,9 +28,9 @@ await Test("Malformed CSV fails closed",()=>Sync(()=>{
  bool rejected=false;try{CsvImport.Parse(value);}catch(AppException){rejected=true;}Check(rejected);}
 }));
 await Test("AU_ID inheritance, exact values, conflicting values",()=>Sync(()=>{
- Check(Planner.AuId([new("AU_ID","00042")],[new("AU_ID","42")])=="00042");
- Check(Planner.AuId([],[new("au_id"," 00042 ")])=="00042");Check(Planner.AuId([new("AU_ID","" )],[new("AU_ID","00042")]) is null);
- Check(Planner.AuId([new("AU_ID","00042"),new("AU_ID","42")],[]) is null);
+ Check(Planner.MatchValue([new("AU_ID","00042")],[new("AU_ID","42")])=="00042");
+ Check(Planner.MatchValue([],[new("au_id"," 00042 ")])=="00042");Check(Planner.MatchValue([new("AU_ID","" )],[new("AU_ID","00042")]) is null);
+ Check(Planner.MatchValue([new("AU_ID","00042"),new("AU_ID","42")],[]) is null);
 }));
 await Test("URL restrictions block credential exfiltration",()=>Sync(()=>{
  Check(AltiumClient.Endpoint("example.365.altium.com").AbsoluteUri=="https://example.365.altium.com/api/graphql");
@@ -49,6 +49,7 @@ await Test("Duplicate CSV pairs and ambiguous files are blocked",()=>Sync(()=>{
  var component=new Component("c1","C1","1","",null,"",[new("AU_ID","00042")],[],[]);
  var file=new LibraryFile(library,"source.PcbLib","hash",["SOT-23"]);
  var rows=Planner.Build(CsvImport.Parse(csv+"00042;Test;S;Supplier;R;SOT-23\n"),[component],new([file],[]));Check(rows[0].Status=="ready"&&rows[1].Reason=="duplicateCsvRow");
+ Check(Planner.Build(CsvImport.Parse(csv+"00042;Test;S;Supplier;R;SOT-23.PcbLib\n"),[component],new([file],[]))[1].Reason=="duplicateCsvRow");
  Check(Planner.Build(CsvImport.Parse(csv),[component],new([file,file with{Path="other"}],[]))[0].Reason=="ambiguousFile");
 }));
 await Test("Source managed GUID bindings are neutralized without moving binary offsets",()=>Sync(()=>{
@@ -63,10 +64,10 @@ await Test("DPAPI state is encrypted, atomic, locked and restorable",()=>Sync(()
  using(var store=new LocalStore(dir)){Check(store.Load()!.Connection!.Info.Name=="Test");store.Clear();Check(!File.Exists(store.FilePath)&&!File.Exists(store.FilePath+".bak"));}
 }));
 
-async Task<(HttpClient Client,Microsoft.AspNetCore.Builder.WebApplication App,FakeAltium Fake)> Host(string name,FakeAltium? fake=null)
+async Task<(HttpClient Client,Microsoft.AspNetCore.Builder.WebApplication App,FakeAltium Fake)> Host(string name,FakeAltium? fake=null,FakeDirectoryPicker? picker=null)
 {
  fake??=new();var handler=fake;
- var app=AppHost.Build(["--port","0","--data-dir",Path.Combine(root,name)],s=>s.AddSingleton(new HttpClient(handler){Timeout=TimeSpan.FromSeconds(10)}));
+ var app=AppHost.Build(["--port","0","--data-dir",Path.Combine(root,name)],s=>{s.AddSingleton(new HttpClient(handler){Timeout=TimeSpan.FromSeconds(10)});if(picker is not null)s.AddSingleton<IDirectoryPicker>(picker);});
  await app.StartAsync();var address=app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
  var client=new HttpClient{BaseAddress=new(address)};client.DefaultRequestHeaders.Add("X-Linker-Session",AppHost.SessionKey(app));return(client,app,fake);
 }
@@ -74,7 +75,7 @@ async Task<JsonElement> Post(HttpClient client,string path,object body)
 {using var response=await client.PostAsJsonAsync(path,body);var text=await response.Content.ReadAsStringAsync();Check(response.IsSuccessStatusCode,path+" "+text);return JsonDocument.Parse(text.Length==0?"{}":text).RootElement.Clone();}
 async Task<JsonElement> Poll(HttpClient client,string id)
 {for(int i=0;i<300;i++){var result=await client.GetFromJsonAsync<JsonElement>("/api/jobs/"+id);if(result.GetProperty("status").GetString()!="running")return result;await Task.Delay(30);}throw new Exception("Job timeout");}
-async Task<JsonElement> Analyze(HttpClient client){var job=await Post(client,"/api/analyze",new{csv,directory=root,folderId="fp-folder"});var result=await Poll(client,job.GetProperty("id").GetString()!);Check(result.GetProperty("status").GetString()=="completed",result.ToString());return result.GetProperty("result").Clone();}
+async Task<JsonElement> Analyze(HttpClient client,string matchField="AU_ID"){var job=await Post(client,"/api/analyze",new{csv,directory=root,matchField});var result=await Poll(client,job.GetProperty("id").GetString()!);Check(result.GetProperty("status").GetString()=="completed",result.ToString());return result.GetProperty("result").Clone();}
 async Task<JsonElement> Apply(HttpClient client,JsonElement plan){var job=await Post(client,"/api/apply",new{planId=plan.GetProperty("id").GetString(),rowIds=plan.GetProperty("rows").EnumerateArray().Where(r=>r.GetProperty("status").GetString()=="ready").Select(r=>r.GetProperty("id").GetString()).ToArray()});return await Poll(client,job.GetProperty("id").GetString()!);}
 await Test("HTTP session security, one upload shared by two AU_ID matches, append verification",async()=>{
  var (client,app,fake)=await Host("http");await using(app){using(client){
@@ -117,9 +118,80 @@ await Test("Manual recovery reuses a verified footprint ID after an uncertain cr
  await Post(client,"/api/recover",new{key,footprintId="new-footprint"});fake.FailCreation=false;
  var result=await Apply(client,await Analyze(client));Check(result.GetProperty("result").GetProperty("results").EnumerateArray().All(r=>r.GetProperty("status").GetString()=="imported"),result.ToString());Check(fake.Creates==1&&fake.Adds==2);await app.StopAsync();}}
 });
+await Test("Configured matching field controls analysis, apply and persisted preferences",async()=>{
+ var fake=new FakeAltium{ParameterField="ERP_ID"};var(client,app,_)=await Host("field",fake);await using(app){using(client){
+ await Post(client,"/api/connect",new{name="Fixture",endpoint="fixture.altium.com",token="fixture-token"});
+ Check((await Analyze(client)).GetProperty("rows")[0].GetProperty("reason").GetString()=="componentNotFound");
+ await Post(client,"/api/preferences",new{matchField=" ERP_ID "});var plan=await Analyze(client,"ERP_ID");
+ Check(plan.GetProperty("matchField").GetString()=="ERP_ID"&&plan.GetProperty("rows").GetArrayLength()==2);
+ Check((await Apply(client,plan)).GetProperty("result").GetProperty("results").EnumerateArray().All(r=>r.GetProperty("status").GetString()=="imported"));
+ await app.StopAsync();}}
+ var(next,restarted,_2)=await Host("field",fake);await using(restarted){using(next){var state=await next.GetFromJsonAsync<JsonElement>("/api/session");Check(state.GetProperty("matchField").GetString()=="ERP_ID");Check(!state.GetProperty("connected").GetBoolean());await restarted.StopAsync();}}
+});
+await Test("One selected component is modified and analysis performs no writes",async()=>{
+ var(client,app,fake)=await Host("selection");await using(app){using(client){await Post(client,"/api/connect",new{name="Fixture",endpoint="fixture.altium.com",token="fixture-token"});var plan=await Analyze(client);
+ Check(fake.Uploads==0&&fake.Creates==0&&fake.Adds==0);
+ var row=plan.GetProperty("rows")[0];var target=row.GetProperty("componentId").GetString()!;
+ var job=await Post(client,"/api/apply",new{planId=plan.GetProperty("id").GetString(),rowIds=new[]{row.GetProperty("id").GetString()}});var result=await Poll(client,job.GetProperty("id").GetString()!);
+ Check(result.GetProperty("result").GetProperty("results").GetArrayLength()==1);Check(fake.Adds==1&&fake.Links[target].Count==2&&fake.Links[target=="c1"?"c2":"c1"].Count==1);await app.StopAsync();}}
+});
+await Test("Destinations are inferred separately from each default footprint",async()=>{
+ var fake=new FakeAltium{FootprintFolders=[new("fp-folder","Models/Footprints/Resistors"),new("fp-other","Models/Footprints/Transistors")]};
+ fake.Links["c2"][0]=new{id="default-other",name="DEFAULT-OTHER",folder=new{folderId="fp-other",path="Models/Footprints/Transistors"}};
+ var(client,app,_)=await Host("destinations",fake);await using(app){using(client){await Post(client,"/api/connect",new{name="Fixture",endpoint="fixture.altium.com",token="fixture-token"});var plan=await Analyze(client);
+ Check(plan.GetProperty("rows").EnumerateArray().Select(r=>r.GetProperty("destination").GetProperty("id").GetString()).Distinct().Count()==2);
+ var result=await Apply(client,plan);Check(result.GetProperty("result").GetProperty("results").EnumerateArray().All(r=>r.GetProperty("status").GetString()=="imported"),result.ToString());
+ Check(fake.Creates==2&&fake.CreatedFolders.ToHashSet().SetEquals(new[]{"fp-folder","fp-other"}));await app.StopAsync();}}
+});
+await Test("Destination changes before apply block upload",async()=>{
+ var fake=new FakeAltium{FootprintFolders=[new("fp-folder","Models/Footprints/Resistors"),new("fp-other","Models/Footprints/Transistors")]};
+ var(client,app,_)=await Host("destination-change",fake);await using(app){using(client){await Post(client,"/api/connect",new{name="Fixture",endpoint="fixture.altium.com",token="fixture-token"});var plan=await Analyze(client);
+ foreach(var id in new[]{"c1","c2"})fake.Links[id][0]=new{id="moved",name="DEFAULT",folder=new{folderId="fp-other",path="Models/Footprints/Transistors"}};
+ var result=await Apply(client,plan);Check(result.GetProperty("result").GetProperty("results").EnumerateArray().All(r=>r.GetProperty("error").GetString()=="destinationChanged"));Check(fake.Uploads==0&&fake.Creates==0&&fake.Adds==0);await app.StopAsync();}}
+});
+await Test("Destination inference prioritizes default, uses common folder and homologous component path",()=>Sync(()=>{
+ LibraryFolder[] folders=[new("res","Components/Models/Footprints/Passives/Resistors"),new("cap","Components/Models/Footprints/Passives/Capacitors")];
+ var c=new ComponentDetails("c","C","1",[],[],[new("a","A","res"),new("b","B","cap")],"Components/Passives/Capacitors");
+ Check(Planner.Destination(c,folders).Folder!.Id=="res");
+ Check(Planner.Destination(c with{Footprints=[new("a","A"),new("b","B","cap")]},folders).Source=="existingFootprints");
+ Check(Planner.Destination(c with{Footprints=[]},folders).Folder!.Id=="cap");
+ Check(Planner.Destination(c with{Footprints=[new("a","A"),new("b","B","res"),new("c","C","cap")]},folders).Source=="destinationAmbiguous");
+ Check(Planner.Destination(c with{Footprints=[],FolderPath="Components/Unknown"},folders).Source=="destinationNotFound");
+ Check(Planner.Destination(c with{Footprints=[]},folders.Append(new("cap2","Other/Passives/Capacitors")).ToArray()).Source=="destinationAmbiguous");
+}));
+await Test("Recursive local search preserves relative paths and does not use them to break name ties",()=>Sync(()=>{
+ var tree=Path.Combine(root,"recursive");var nested=Path.Combine(tree,"Passives","Resistors");Directory.CreateDirectory(nested);
+ PcbFixture.Write(Path.Combine(nested,"different-filename.PcbLib"),"NESTED_ONLY");var catalog=PcbLibrary.Catalog(tree,CancellationToken.None);
+ Check(catalog.Files.Length==1&&catalog.Files[0].RelativePath==Path.Combine("Passives","Resistors","different-filename.PcbLib"));
+ var row=new CsvRow(2,"00042","","","","","NESTED_ONLY");Check(Planner.FindFile(row,catalog).File is not null);
+ var other=Path.Combine(tree,"Other");Directory.CreateDirectory(other);PcbFixture.Write(Path.Combine(other,"duplicate.PcbLib"),"NESTED_ONLY");
+ Check(Planner.FindFile(row,PcbLibrary.Catalog(tree,CancellationToken.None)).Error=="ambiguousFile");Directory.Delete(tree,true);
+}));
+await Test("Matched components remain visible when the local footprint is missing",()=>Sync(()=>{
+ var c=new Component("c","C","1","",null,"",[new("AU_ID","00042")],[],[]);
+ var row=Planner.Build(CsvImport.Parse(csv),[c],new([],[]))[0];Check(row.ComponentId=="c"&&row.Status=="blocked"&&row.Reason=="fileNotFound");
+}));
+await Test("Folder picker endpoint returns selection and preserves cancellation",async()=>{
+ var picker=new FakeDirectoryPicker{Result=new(root,false)};var(client,app,fake)=await Host("picker",picker:picker);await using(app){using(client){
+ var result=await Post(client,"/api/directory/pick",new{directory="C:\\Previous"});Check(result.GetProperty("directory").GetString()==root&&picker.InitialDirectory=="C:\\Previous");
+ picker.Result=new(null,true);result=await Post(client,"/api/directory/pick",new{directory=root});Check(result.GetProperty("cancelled").GetBoolean()&&result.GetProperty("directory").ValueKind==JsonValueKind.Null);Check(fake.Calls==0);await app.StopAsync();}}
+});
+await Test("Legacy encrypted state retains its journal and defaults the match field to AU_ID",async()=>{
+ var directory=Path.Combine(root,"legacy");Directory.CreateDirectory(directory);
+ var json="{\"formatVersion\":1,\"connection\":null,\"directory\":null,\"folderId\":\"legacy-global-folder\",\"journal\":{}}";
+ File.WriteAllBytes(Path.Combine(directory,"state.dat"),Encoding.ASCII.GetBytes("FLINK1\0").Concat(new WindowsDataProtector().Protect(Encoding.UTF8.GetBytes(json))).ToArray());
+ var(client,app,_)=await Host("legacy");await using(app){using(client){var state=await client.GetFromJsonAsync<JsonElement>("/api/session");Check(state.GetProperty("matchField").GetString()=="AU_ID");Check(state.GetProperty("storageError").ValueKind==JsonValueKind.Null);Check(!state.TryGetProperty("folderId",out _));await app.StopAsync();}}
+});
+await Test("Invalid matching fields are rejected and changing the field invalidates the analysis",async()=>{
+ var(client,app,_)=await Host("invalid-field");await using(app){using(client){await Post(client,"/api/connect",new{name="Fixture",endpoint="fixture.altium.com",token="fixture-token"});var plan=await Analyze(client);
+ var invalid=await client.PostAsJsonAsync("/api/preferences",new{matchField=" "});Check(invalid.StatusCode==HttpStatusCode.BadRequest);
+ await Post(client,"/api/preferences",new{matchField="OTHER_ID"});var response=await client.PostAsJsonAsync("/api/apply",new{planId=plan.GetProperty("id").GetString(),rowIds=plan.GetProperty("rows").EnumerateArray().Select(r=>r.GetProperty("id").GetString()).ToArray()});Check(response.StatusCode==HttpStatusCode.Conflict);await app.StopAsync();}}
+});
 if(args.Contains("--preview"))
 {
- var(client,app,_)=await Host("preview");await using(app){using(client){
+ var nested=Path.Combine(root,"local-libraries","Transistors");Directory.CreateDirectory(nested);File.Move(library,Path.Combine(nested,"source.PcbLib"));
+ File.WriteAllText(Path.Combine(root,"input.csv"),csv);
+ var(client,app,_)=await Host("preview",picker:new(){Result=new(root,false)});await using(app){using(client){
  await Post(client,"/api/connect",new{name="SIMULATION — Fixture workspace",endpoint="fixture.altium.com",token="fixture-token"});await Analyze(client);
  Console.WriteLine("PREVIEW "+client.BaseAddress+"#session="+AppHost.SessionKey(app));
  await app.WaitForShutdownAsync();}}

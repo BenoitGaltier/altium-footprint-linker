@@ -4,8 +4,9 @@ using System.Text.Json;
 
 namespace FootprintLinker;
 
-public sealed record FootprintRef(string Id, string Name);
-public sealed record ComponentDetails(string Id, string Name, string Revision, Parameter[] Parameters, Parameter[] ItemParameters, FootprintRef[] Footprints);
+public sealed record FootprintRef(string Id, string Name, string? FolderId = null, string? FolderPath = null);
+public sealed record ComponentDetails(string Id, string Name, string Revision, Parameter[] Parameters, Parameter[] ItemParameters, FootprintRef[] Footprints,
+    string FolderPath = "");
 
 public sealed partial class AltiumClient
 {
@@ -17,9 +18,9 @@ public sealed partial class AltiumClient
     public const string FullDetailsQuery = """
         query LinkerDetails($id: ID!) {
           desComponentById(id: $id) {
-            id name revisionId details {
+            id name revisionId folder { path } details {
               parameters { name value } itemParameters { name value }
-              footprints { id name }
+              footprints { id name folder { folderId path } }
             }
           }
         }
@@ -60,7 +61,10 @@ public sealed partial class AltiumClient
         if (Text(node, "id") != id) throw new AppException("apiFormat");
         return new(id, Text(node, "name"), Text(node, "revisionId"), Parameters(details, "parameters").ToArray(),
             Parameters(details, "itemParameters").ToArray(), Required(details, "footprints").EnumerateArray()
-                .Select(f => new FootprintRef(Text(f, "id"), Text(f, "name"))).ToArray());
+                .Select(f => new FootprintRef(Text(f, "id"), Text(f, "name"),
+                    f.TryGetProperty("folder", out var folder) ? Text(folder, "folderId") : null,
+                    f.TryGetProperty("folder", out var folderPath) ? Text(folderPath, "path") : null)).ToArray(),
+            node.TryGetProperty("folder", out var componentFolder) ? Text(componentFolder, "path") : "");
     }
     public async Task<string> Upload(WorkspaceConnection workspace, byte[] bytes, string filename, CancellationToken ct)
     {

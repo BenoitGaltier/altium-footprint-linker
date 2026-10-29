@@ -27,17 +27,18 @@ public sealed class ImportSession
     private readonly object sync = new();
     private StoredState state = new(1, null, null, null, []);
     private LibraryFolder[] folders = [];
+    private bool connected;
     private ImportPlan? plan; private ImportJob? job; private string? storageError;
     public ImportSession(AltiumClient altium, IHostApplicationLifetime lifetime, LocalStore? store = null)
     {
         this.altium = altium; this.store = store; this.lifetime = lifetime;
-        try { if (store?.Load() is { } loaded) state = loaded; }
+        try { if (store?.Load() is { } loaded) state = loaded with { FolderId = null }; }
         catch (AppException ex) { storageError = ex.Code; }
     }
     public object Current()
     {
         lock (sync) return new { Connection = state.Connection?.Info, HasSavedToken = state.Connection is not null,
-            state.Directory, state.FolderId, Folders = folders, Job = job?.Snapshot(), StorageError = storageError,
+            state.Directory, state.MatchField, Connected = connected, Job = job?.Snapshot(), StorageError = storageError,
             DataDirectory = store?.DirectoryPath, Journal = state.Journal.Values.ToArray() };
     }
     private void Idle() { if (job?.Running == true) throw new AppException("jobRunning", status: 409); }
@@ -64,7 +65,7 @@ public sealed class ImportSession
             {
                 var old = state; state = state with { Connection = connected };
                 try { Persist(); } catch { state = old; throw; }
-                folders = availableFolders; plan = null;
+                folders = availableFolders; this.connected = true; plan = null;
             }
             return connected.Info;
         }
@@ -76,21 +77,37 @@ public sealed class ImportSession
         try
         {
             Idle(); var connection = state.Connection ?? throw new AppException("connectFirst");
-            if (!folders.Any(f => f.Id == request.FolderId)) throw new AppException("selectFolder");
+            if (!connected) throw new AppException("connectFirst");
+            var matchField = Planner.ValidateMatchField(request.MatchField);
             var csv = CsvImport.Parse(request.Csv); var directory = Path.GetFullPath(request.Directory.Trim());
             if (!System.IO.Directory.Exists(directory)) throw new AppException("directoryMissing");
             lock (sync)
             {
-                var old = state; state = state with { Directory = directory, FolderId = request.FolderId };
+                var old = state; state = state with { Directory = directory, MatchField = matchField, FolderId = null };
                 try { Persist(); } catch { state = old; throw; }
                 job?.Cancellation.Dispose(); job = new("analyze"); plan = null;
             }
-            _ = RunAnalysis(job, connection, csv, directory, request.FolderId);
+            _ = RunAnalysis(job, connection, csv, directory, matchField);
             return job.Snapshot();
         }
         finally { gate.Release(); }
     }
-    private async Task RunAnalysis(ImportJob current, WorkspaceConnection connection, CsvRow[] csv, string directory, string folderId)
+    public async Task SetPreferences(PreferencesRequest request, CancellationToken ct)
+    {
+        var field = Planner.ValidateMatchField(request.MatchField);
+        await gate.WaitAsync(ct);
+        try
+        {
+            Idle(); lock (sync)
+            {
+                var previous = state; state = state with { MatchField = field };
+                try { Persist(); } catch { state = previous; throw; }
+                if (previous.MatchField != field) plan = null;
+            }
+        }
+        finally { gate.Release(); }
+    }
+    private async Task RunAnalysis(ImportJob current, WorkspaceConnection connection, CsvRow[] csv, string directory, string matchField)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(current.Cancellation.Token, lifetime.ApplicationStopping);
         try
@@ -103,7 +120,7 @@ public sealed class ImportSession
             if (components.Any(c => c.DetailError is not null)) warnings.Add("unreadParameters");
             if (diagnostics is null) throw new AppException("apiFormat");
             warnings.AddRange(diagnostics.Warnings);
-            var rows = Planner.Build(csv, components, catalog);
+            var rows = Planner.Build(csv, components, catalog, matchField);
             var matched = rows.Where(r => r.ComponentId is not null).Select(r => r.ComponentId!).Distinct().ToArray();
             var details = new Dictionary<string, ComponentDetails>();
             foreach (var id in matched)
@@ -115,15 +132,19 @@ public sealed class ImportSession
             {
                 if (r.ComponentId is null) return r;
                 var detail = details[r.ComponentId];
-                if (Planner.AuId(detail.Parameters, detail.ItemParameters) != r.Csv.Item || detail.Revision != r.Revision)
+                if (Planner.MatchValue(detail.Parameters, detail.ItemParameters, matchField) != r.Csv.Item || detail.Revision != r.Revision)
                     return r with { Status = "blocked", Reason = "componentChanged" };
-                var key = AssetKey(connection, folderId, r);
-                var importedId = state.Journal.GetValueOrDefault(key)?.FootprintId;
+                var destination = Planner.Destination(detail, folders);
+                r = r with { ExistingFootprints = detail.Footprints.Select(f => f.Name).ToArray(), Destination = destination.Folder,
+                    DestinationSource = destination.Source };
+                if (r.Status != "ready") return r;
+                var key = destination.Folder is null ? null : AssetKey(connection, destination.Folder.Id, r);
+                var importedId = key is null ? null : state.Journal.GetValueOrDefault(key)?.FootprintId;
                 bool linkedAlready = detail.Footprints.Any(f => f.Id == importedId || f.Name.Equals(r.InternalName, StringComparison.OrdinalIgnoreCase));
-                return r with { ExistingFootprints = detail.Footprints.Select(f => f.Name).ToArray(),
-                    Status = linkedAlready ? "alreadyLinked" : "ready" };
+                return r with { Status = linkedAlready ? "alreadyLinked" : destination.Folder is null ? "blocked" : "ready",
+                    Reason = !linkedAlready && destination.Folder is null ? destination.Source : null };
             }).ToArray();
-            var result = new ImportPlan(Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow, connection.Info.Endpoint, directory, folderId, rows, diagnostics, warnings.ToArray());
+            var result = new ImportPlan(Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow, connection.Info.Endpoint, directory, matchField, rows, diagnostics, warnings.ToArray());
             lock (sync) plan = result;
             current.Complete(result);
         }
@@ -143,8 +164,9 @@ public sealed class ImportSession
             if (selectedPlan is null || selectedPlan.Id != request.PlanId || selectedPlan.Endpoint != connection.Info.Endpoint) throw new AppException("planExpired", status: 409);
             var ids = request.RowIds.ToHashSet(StringComparer.Ordinal);
             var selected = selectedPlan.Rows.Where(r => ids.Contains(r.Id)).ToArray();
-            if (selected.Length == 0 || selected.Length != ids.Count || selected.Any(r => r.Status != "ready")) throw new AppException("invalidSelection");
+            if (selected.Length == 0 || selected.Length != ids.Count || selected.Any(r => r.Status != "ready" || r.Destination is null)) throw new AppException("invalidSelection");
             if (selectedPlan.Warnings.Length > 0) throw new AppException("partialPlan", status: 409);
+            folders = await altium.Folders(connection, ct);
             Persist();
             lock (sync) { job?.Cancellation.Dispose(); job = new("apply"); }
             _ = RunApply(job, connection, selectedPlan, selected);
@@ -154,12 +176,12 @@ public sealed class ImportSession
     }
     public static string AssetKey(WorkspaceConnection connection, string folderId, PlanRow row) => Convert.ToHexString(SHA256.HashData(
         Encoding.UTF8.GetBytes(connection.Info.Endpoint + "\0" + folderId + "\0" + row.File!.Sha256 + "\0" + row.InternalName)));
-    private void Record(string key, string stage, string? id, string name)
+    private void Record(string key, string stage, string? id, string name, string folderId)
     {
         lock (sync)
         {
             var existing = state.Journal.GetValueOrDefault(key);
-            state.Journal[key] = new(key, existing?.Endpoint ?? state.Connection!.Info.Endpoint, existing?.FolderId ?? state.FolderId!, stage, id, name, DateTimeOffset.UtcNow);
+            state.Journal[key] = new(key, existing?.Endpoint ?? state.Connection!.Info.Endpoint, existing?.FolderId ?? folderId, stage, id, name, DateTimeOffset.UtcNow);
             Persist(); // Must reach disk before a remote mutation begins.
         }
     }
@@ -177,10 +199,13 @@ public sealed class ImportSession
                 {
                     current.Progress("importing", results.Count, selected.Length);
                     var before = await altium.Details(connection, row.ComponentId!, lifetime.ApplicationStopping);
-                    if (Planner.AuId(before.Parameters, before.ItemParameters) != row.Csv.Item || before.Revision != row.Revision) throw new AppException("componentChanged");
+                    if (Planner.MatchValue(before.Parameters, before.ItemParameters, sourcePlan.MatchField) != row.Csv.Item || before.Revision != row.Revision) throw new AppException("componentChanged");
+                    var destination = Planner.Destination(before, folders);
+                    if (destination.Folder is null || destination.Folder.Id != row.Destination!.Id) throw new AppException("destinationChanged");
+                    var folder = destination.Folder;
                     var file = row.File!;
                     if (!Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(file.Path))).Equals(file.Sha256, StringComparison.Ordinal)) throw new AppException("fileChanged");
-                    var key = AssetKey(connection, sourcePlan.FolderId, row);
+                    var key = AssetKey(connection, folder.Id, row);
                     var previous = state.Journal.GetValueOrDefault(key);
                     footprintId = previous?.FootprintId;
                     if (before.Footprints.Any(f => f.Id == footprintId || f.Name.Equals(row.InternalName, StringComparison.OrdinalIgnoreCase)))
@@ -193,25 +218,25 @@ public sealed class ImportSession
                         if (Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(file.Path))) != file.Sha256) throw new AppException("fileChanged");
                         var filename = "footprint-" + file.Sha256[..16] + ".PcbLib";
                         var fileId = await altium.Upload(connection, bytes, filename, lifetime.ApplicationStopping);
-                        Record(key, "creating", null, row.InternalName!);
-                        try { footprintId = await altium.Create(connection, sourcePlan.FolderId, row.InternalName!, fileId, filename, file.Sha256, lifetime.ApplicationStopping,
-                            folders.Single(f => f.Id == sourcePlan.FolderId).UseNamingScheme); }
-                        catch (AppException ex) when (ex.Code == "apiMutationRejected") { Record(key, "rejected", null, row.InternalName!); throw; }
+                        Record(key, "creating", null, row.InternalName!, folder.Id);
+                        try { footprintId = await altium.Create(connection, folder.Id, row.InternalName!, fileId, filename, file.Sha256, lifetime.ApplicationStopping, folder.UseNamingScheme); }
+                        catch (AppException ex) when (ex.Code == "apiMutationRejected") { Record(key, "rejected", null, row.InternalName!, folder.Id); throw; }
                         catch (Exception ex) when (ex is AppException or HttpRequestException or OperationCanceledException)
                         { throw new AppException("creationOutcomeUnknown"); }
-                        Record(key, "created", footprintId, row.InternalName!);
+                        Record(key, "created", footprintId, row.InternalName!, folder.Id);
                     }
                     var linkKey = key + ":" + row.ComponentId;
                     var link = state.Journal.GetValueOrDefault(linkKey);
                     // Re-read after an import and before append; another user may have linked it meanwhile.
                     before = await altium.Details(connection, row.ComponentId!, lifetime.ApplicationStopping);
-                    if (Planner.AuId(before.Parameters, before.ItemParameters) != row.Csv.Item || before.Revision != row.Revision) throw new AppException("componentChanged");
+                    if (Planner.MatchValue(before.Parameters, before.ItemParameters, sourcePlan.MatchField) != row.Csv.Item || before.Revision != row.Revision) throw new AppException("componentChanged");
+                    if (Planner.Destination(before, folders).Folder?.Id != folder.Id) throw new AppException("destinationChanged");
                     if (!before.Footprints.Any(f => f.Id == footprintId))
                     {
                         if (link?.Stage == "adding") throw new AppException("linkOutcomeUnknown");
-                        Record(linkKey, "adding", footprintId, row.InternalName!);
+                        Record(linkKey, "adding", footprintId, row.InternalName!, folder.Id);
                         try { await altium.Add(connection, row.ComponentId!, footprintId, lifetime.ApplicationStopping); }
-                        catch (AppException ex) when (ex.Code == "apiMutationRejected") { Record(linkKey, "rejected", footprintId, row.InternalName!); throw; }
+                        catch (AppException ex) when (ex.Code == "apiMutationRejected") { Record(linkKey, "rejected", footprintId, row.InternalName!, folder.Id); throw; }
                         catch (Exception ex) when (ex is AppException or HttpRequestException or OperationCanceledException)
                         {
                             var reconciled = await altium.Details(connection, row.ComponentId!, lifetime.ApplicationStopping);
@@ -227,7 +252,7 @@ public sealed class ImportSession
                     }
                     if (!after.Footprints.Any(f => f.Id == footprintId) || before.Footprints.Any(f => !after.Footprints.Any(a => a.Id == f.Id)) ||
                         (before.Footprints.Length > 0 && after.Footprints.FirstOrDefault()?.Id != before.Footprints[0].Id)) throw new AppException("verificationFailed");
-                    Record(linkKey, "complete", footprintId, row.InternalName!);
+                    Record(linkKey, "complete", footprintId, row.InternalName!, folder.Id);
                     results.Add(new(row.Id, "imported", footprintId, null));
                 }
                 catch (AppException ex) { results.Add(new(row.Id,
@@ -239,7 +264,7 @@ public sealed class ImportSession
             lock (sync) plan = null;
             current.Complete(new { Plan = sourcePlan, Results = results, Cancelled = results.Count < selected.Length, Requested = selected.Length });
         }
-        finally { lock (sync) plan = null; }
+        catch (Exception) { lock (sync) plan = null; current.Fail("importFailed"); }
     }
     public ImportJob Job(string id) { lock (sync) return job?.Id == id ? job : throw new AppException("jobNotFound", status: 404); }
     public async Task Recover(RecoveryRequest request, CancellationToken ct)
@@ -251,7 +276,7 @@ public sealed class ImportSession
             if (entry is null || entry.Stage is not ("creating" or "adding")) throw new AppException("recoveryInvalid");
             var connection = state.Connection ?? throw new AppException("connectFirst");
             if (entry.Endpoint != connection.Info.Endpoint) throw new AppException("recoveryMismatch");
-            if (request.FootprintId == "ABSENT") Record(request.Key, "manuallyVerifiedAbsent", entry.FootprintId, entry.Name);
+            if (request.FootprintId == "ABSENT") Record(request.Key, "manuallyVerifiedAbsent", entry.FootprintId, entry.Name, entry.FolderId);
             else
             {
                 await altium.VerifyFootprint(connection, request.FootprintId, entry.Name, entry.FolderId, ct);
@@ -261,7 +286,7 @@ public sealed class ImportSession
                     var details = await altium.Details(connection, componentId, ct);
                     if (!details.Footprints.Any(f => f.Id == request.FootprintId)) throw new AppException("recoveryMismatch");
                 }
-                Record(request.Key, "manuallyVerifiedPresent", request.FootprintId, entry.Name);
+                Record(request.Key, "manuallyVerifiedPresent", request.FootprintId, entry.Name, entry.FolderId);
             }
             lock (sync) plan = null;
         }
@@ -270,7 +295,7 @@ public sealed class ImportSession
     public async Task Forget(CancellationToken ct)
     {
         await gate.WaitAsync(ct);
-        try { Idle(); lock (sync) { store?.Clear(); state = new(1, null, null, null, []); folders = []; plan = null; storageError = null; } }
+        try { Idle(); lock (sync) { store?.Clear(); state = new(1, null, null, null, []); folders = []; connected = false; plan = null; storageError = null; } }
         finally { gate.Release(); }
     }
 }

@@ -1,12 +1,13 @@
-Application Windows portable pour ajouter des empreintes complémentaires à des composants Altium 365.
+Footprint Linker 1.1.0 ajoute les évolutions demandées :
 
-- Connexion URL/token et sauvegarde chiffrée, dans le même esprit que Component Lens.
-- Import CSV à six colonnes et recherche de tous les composants correspondants par `AU_ID`.
-- Indexation récursive des noms internes `.PcbLib`, y compris bibliothèques contenant plusieurs empreintes.
-- Tableau de contrôle, sélection, import puis ajout en fin de liste avec vérification de l’empreinte par défaut.
-- Journal chiffré de reprise et blocage des répétitions d’écritures incertaines.
-- Rapport JSON, exemple CSV, exécutable avec runtime inclus et checksum SHA-256.
+- **Parcourir…** ouvre le sélecteur de dossier Windows pour choisir le répertoire racine des empreintes.
+- Recherche des `.PcbLib` dans tous ses sous-dossiers, avec chemin relatif affiché. Les noms présents dans plusieurs fichiers restent signalés comme ambigus, sans départage par chemin local.
+- **Destination Altium déduite de chaque composant**, en priorité du dossier de son empreinte par défaut, puis des autres empreintes et de son classement. Le tableau présente la destination et son origine ; les cas ambigus sont bloqués.
+- Deux actions visibles : **1. Analyser les composants**, puis **2. Ajouter aux composants sélectionnés**. Les composants trouvés restent visibles même si leur empreinte manque. Aucune association n’est présélectionnée.
+- **Champ de correspondance configurable**, `AU_ID` par défaut, conservé dans la sauvegarde chiffrée et utilisé pour l’analyse comme pour l’ajout.
 
-Extrayez le ZIP et lancez **FootprintLinker.exe**. Aucun logiciel de développement à installer. Windows 10/11 x64 requis. Binaire non signé.
+Extrayez le ZIP et lancez **FootprintLinker.exe**. Windows 10/11 x64 ; aucun logiciel de développement à installer. Binaire non signé.
 
-La validation automatique utilise un serveur Altium simulé et des bibliothèques synthétiques. L’import sur un workspace réel reste à qualifier avec vos droits, règles de nommage et fichiers.
+Les connexions et le journal 1.0.0 sont conservés. L’ancienne destination globale est ignorée : la destination est maintenant calculée pour chaque composant.
+
+Tests automatiques et import sur simulateur. L’import sur un workspace réel et la sélection interactive dans le dialogue Windows restent à qualifier dans votre environnement.

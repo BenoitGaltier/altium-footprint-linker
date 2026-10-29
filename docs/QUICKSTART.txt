@@ -1,13 +1,18 @@
-FOOTPRINT LINKER 1.0.0 — Windows 10/11 x64
+FOOTPRINT LINKER 1.1.0 — Windows 10/11 x64
 
 1. Extraire le ZIP puis lancer FootprintLinker.exe.
 2. Garder la console ouverte et utiliser l'interface du navigateur.
 3. Connecter l'URL du workspace et un token API autorise en lecture/ecriture.
-4. Choisir le CSV, le repertoire local de .PcbLib et le dossier Altium cible.
-5. Analyser, verifier le tableau, selectionner puis importer.
+4. Choisir le CSV et le champ Altium correspondant a Item (AU_ID par defaut).
+5. Cliquer Parcourir pour choisir le repertoire racine avec Windows.
+6. Cliquer 1. Analyser les composants ; tous les sous-dossiers sont parcourus.
+7. Verifier les fichiers et les destinations Altium deduites par composant.
+8. Cocher les lignes voulues et cliquer 2. Ajouter aux composants selectionnes.
 
 Colonnes CSV : Item;Description;Supplier;Supplier Name;Supplier Item No;footprint
-Item est compare exactement au champ AU_ID, sans perdre les zeros initiaux.
+Item est compare exactement au champ configure, sans perdre les zeros initiaux.
+La destination est deduite d'abord de l'empreinte par defaut du composant.
+Les homonymes de fichiers locaux et destinations ambigues sont signales.
 Les empreintes sont ajoutees en fin de liste ; le modele par defaut est conserve.
 Les autres colonnes du CSV ne modifient aucun parametre Altium.
 

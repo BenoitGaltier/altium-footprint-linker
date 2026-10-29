@@ -89,6 +89,7 @@ public sealed class LocalStore : IDisposable
                 if (state.FormatVersion != 1) throw new AppException("storageVersion");
                 ValidateConnection(state.Connection, "workspace");
                 if (state.Journal is null) throw new AppException("storageRead");
+                Planner.ValidateMatchField(state.MatchField);
                 return state;
             }
             catch (JsonException) { throw new AppException("storageRead"); }
