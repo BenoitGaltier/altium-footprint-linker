@@ -1,76 +1,82 @@
 # Footprint Linker
 
-Application Windows portable pour ajouter des **empreintes complémentaires** à des composants Altium 365, à partir d’un CSV et d’un répertoire de fichiers `.PcbLib`.
+**English** | [Français](README.fr.md)
 
-Elle reprend l’architecture de [Component Lens](https://github.com/BenoitGaltier/altium-component-lens) : exécutable autonome, interface locale dans le navigateur, URL de workspace et token API sauvegardés avec le chiffrement Windows.
+A portable Windows application that adds **additional footprints** to Altium 365 components using a CSV file and a directory of `.PcbLib` files.
 
-## Utilisation
+Built on the same architecture as [Component Lens](https://github.com/BenoitGaltier/altium-component-lens): a self-contained executable, a local browser interface, and workspace URLs and API tokens saved with Windows encryption.
 
-Téléchargez le ZIP de la [dernière version](https://github.com/BenoitGaltier/altium-footprint-linker/releases/latest), extrayez-le puis lancez **FootprintLinker.exe**. Windows 10/11 x64 et un navigateur moderne suffisent : aucun SDK .NET, Node.js ou Altium Designer à installer. Gardez la console ouverte pendant l’utilisation.
+## Getting started
 
-1. Connectez votre workspace avec son URL et un token API autorisé à lire les composants, importer des empreintes et modifier les associations.
-2. Choisissez un CSV contenant les six colonnes ci-dessous. Leur ordre peut varier ; les colonnes supplémentaires sont acceptées et ignorées.
-3. Configurez le **champ Altium correspondant à Item** (`AU_ID` par défaut). Cliquez sur **Parcourir…** pour sélectionner le répertoire racine des `.PcbLib` avec le sélecteur de dossier Windows. Le chemin peut également être saisi.
-4. Cliquez sur **1. Analyser les composants**. Le tableau liste tous les composants trouvés, les empreintes locales et leurs chemins relatifs, ainsi que les dossiers de destination déduits.
-5. Cochez les associations voulues puis cliquez sur **2. Ajouter aux composants sélectionnés**. Aucune ligne n’est présélectionnée. Le dialogue récapitule le workspace et le nombre d’associations.
-6. Exportez le rapport JSON pour conserver les correspondances, les résultats et le journal.
+Download the ZIP from the [latest release](https://github.com/BenoitGaltier/altium-footprint-linker/releases/latest), extract it, and run **FootprintLinker.exe**. Windows 10/11 x64 and a modern browser are sufficient. No .NET SDK, Node.js, or Altium Designer installation is required. Keep the console window open while using the application.
 
-Chaque empreinte locale reconnue possède un bouton **Voir 2D / 3D**. L’aperçu se calcule sur la machine, directement depuis le `.PcbLib`, sans lancer Altium et sans envoyer de fichier à un service de visualisation.
+The interface currently uses French labels. The steps below include the exact button names.
 
-## Visualisation 2D et 3D
+1. Connect to your workspace using its URL and an API token allowed to read components, import footprints, and update footprint associations.
+2. Select a CSV file containing the six columns shown below. Column order may vary; additional columns are accepted and ignored.
+3. Configure the **Altium field matching Item** (`AU_ID` by default). Click **Parcourir…** (Browse) to select the root directory containing your `.PcbLib` files with the native Windows folder picker. You can also enter the path manually.
+4. Click **1. Analyser les composants** (Analyze components). The table lists matching components, local footprints and their relative paths, and the inferred destination folders.
+5. Select the associations you want to add, then click **2. Ajouter aux composants sélectionnés** (Add to selected components). No rows are selected automatically. The confirmation dialog summarizes the workspace and the number of associations.
+6. Export the JSON report to retain the matches, results, and operation journal.
 
-- **Vue 2D** : toutes les couches présentes sont visibles par défaut, sur les deux faces, avec une couleur et une case à cocher par couche. Le panneau **Couches 2D** permet une sélection multiple, **Toutes**, **Aucune** ou **Seule** pour isoler une couche. Molette pour zoomer, glisser pour déplacer, **Recentrer** pour retrouver la vue initiale. **Exporter SVG** conserve les couches actuellement sélectionnées.
-- Les couches cuivre, Overlay, Paste, Solder Mask, mécaniques et Keep-Out sont distinguées. Les ouvertures Paste/Solder Mask des pastilles sont projetées sur la bonne face ; les expansions manuelles et le tenting sont pris en compte. Les ouvertures dépendant de règles de carte absentes sont représentées à la taille nominale et signalées. Les perçages et la position des corps 3D disposent de groupes séparés. Les couches vides ne sont pas proposées.
-- **Vue 3D** : pastilles, traits, perçages et modèles STEP embarqués, convertis localement en maillages. Glisser pour tourner, clic droit pour déplacer, molette pour zoomer. Le navigateur doit disposer de WebGL 2. Les corps extrudés définis par un contour et leurs hauteurs sont également affichés.
-- La sélection utilise le nom interne demandé dans le CSV, y compris dans une bibliothèque à plusieurs empreintes. Le hash du fichier est revérifié avant le rendu, comme avant l’import.
-- Les modèles externes absents, corps non pris en charge ou échecs de conversion sont signalés. Si aucun corps 3D exploitable n’existe, la vue 3D affiche les primitives disponibles de l’empreinte avec un avertissement. Aucun boîtier n’est inventé à partir du nom du composant.
-- **Exporter GLB** est disponible pour la scène 3D convertie. Il est désactivé lorsqu’elle contient des corps extrudés ajoutés par le visualiseur, qui ne sont pas inclus dans ce fichier GLB.
+Each recognized local footprint has a **Voir 2D / 3D** (View 2D / 3D) button. Previews are generated locally, directly from the `.PcbLib`, without launching Altium or sending the file to a visualization service.
 
-La vue est un outil de contrôle visuel, pas une qualification des dimensions de fabrication. Les perçages sont représentés avec une épaisseur de support conventionnelle ; les textures externes et tous les types de corps ne sont pas pris en charge. Le rendu utilise AltiumSharp/OriginalCircuit et Three.js, embarqués dans l’exécutable ; il ne dépend pas d’Altium Designer.
+## 2D and 3D previews
+
+- **2D view:** all populated layers on both sides are visible by default, with a distinct color and checkbox for each layer. The **Couches 2D** (2D layers) panel supports multiple selections, **Toutes** (All), **Aucune** (None), and **Seule** (Only) to isolate one layer. Use the mouse wheel to zoom, drag to pan, and **Recentrer** (Fit view) to restore the initial view. **Exporter SVG** preserves the current layer selection.
+- Copper, Overlay, Paste, Solder Mask, mechanical, and Keep-Out layers are shown separately. Pad paste and solder mask openings are projected onto the correct side, respecting manual expansions and tenting. Openings controlled by unavailable board rules use nominal pad dimensions and are flagged. Drill holes and 3D body positions have separate groups. Empty layers are not listed.
+- **3D view:** pads, tracks, holes, and embedded STEP models are converted locally into meshes. Drag to rotate, right-drag to pan, and use the mouse wheel to zoom. WebGL 2 is required. Extruded bodies defined by an outline and heights are also displayed.
+- The preview uses the internal footprint name requested in the CSV, including when a library contains multiple footprints. The file hash is checked again before rendering, as it is before import.
+- Missing external models, unsupported bodies, and conversion failures are reported. If no usable 3D body exists, the 3D view displays the available footprint primitives with a warning. Package geometry is never invented from the component name.
+- **Exporter GLB** exports the converted 3D scene. It is disabled when the viewer has added extruded bodies that are not included in the GLB file.
+
+Previews support visual inspection; they do not qualify manufacturing dimensions. Holes use a conventional support thickness, and external textures and some body types are unsupported. Rendering uses AltiumSharp/OriginalCircuit and Three.js bundled in the executable, without Altium Designer.
+
+## CSV format
 
 ```csv
 Item;Description;Supplier;Supplier Name;Supplier Item No;footprint
 00042;Example component;SUP;Example supplier;REF-001;SOT-23
 ```
 
-Un [exemple CSV](examples/footprints.csv) est fourni, également téléchargeable depuis l’application. Les séparateurs virgule, point-virgule, tabulation et `|`, les champs entre guillemets, les retours à la ligne dans les champs, UTF-8 avec/sans BOM et Windows-1252 sont pris en charge. Les limites sont de 10 Mo et 50 000 lignes. Les guillemets ou nombres de colonnes incohérents sont refusés.
+A [sample CSV](examples/footprints.csv) is included and can also be downloaded from the application. Supported formats include comma, semicolon, tab, and `|` separators; quoted fields; multiline fields; UTF-8 with or without a BOM; and Windows-1252. Limits are 10 MB and 50,000 rows. Malformed quoting and inconsistent column counts are rejected.
 
-## Correspondances et import
+## Matching and import behavior
 
-- `Item` est comparé au **champ Altium configurable** (`AU_ID` par défaut), après suppression des espaces extérieurs. La comparaison des valeurs conserve la casse, la ponctuation et les zéros initiaux : `00042` reste différent de `42`. Le nom du champ est reconnu sans distinction de casse. Le réglage est sauvegardé avec les données chiffrées ; tout changement invalide l’analyse précédente.
-- Les paramètres de révision priment sur les paramètres hérités de l’item, y compris lorsqu’une valeur de révision est vide. Plusieurs valeurs contradictoires ne sont pas utilisées comme identifiant.
-- L’inventaire lit toutes les pages de la bibliothèque accessible au token, avec **la dernière révision** de chaque composant. Une même valeur peut correspondre à plusieurs composants : tous apparaissent, avec une ligne par association. Les composants trouvés restent affichés même si leur fichier d’empreinte manque ou si leur destination est ambiguë.
-- Chaque paire `Item / footprint` répétée dans le CSV est signalée. Plusieurs empreintes différentes pour le même Item sont autorisées.
-- Le répertoire choisi et **tous ses sous-dossiers** sont parcourus récursivement, sans suivre les jonctions/liens symboliques. L’application lit les **noms internes** des `.PcbLib` ; le nom du fichier peut être différent. La comparaison du nom d’empreinte ignore la casse et accepte le suffixe facultatif `.PcbLib` dans le CSV. La recherche récursive ne se sert pas des chemins locaux pour départager les homonymes : si le nom existe dans plusieurs fichiers, la ligne est bloquée. Le chemin relatif retenu est affiché dans le tableau.
-- Une bibliothèque contenant plusieurs empreintes est réduite à l’empreinte sélectionnée dans une copie temporaire. Les primitives et modèles embarqués sont copiés comme données binaires ; les anciennes liaisons de workspace `ITEMGUID`, `REVISIONGUID`, `VAULTGUID` et `FOLDERGUID` sont neutralisées sans changer la taille des blocs. Les fichiers sources restent inchangés. Les modèles 3D embarqués sont conservés, mais les dépendances externes absentes du `.PcbLib` ne sont pas rassemblées.
-- La **destination Altium est déduite par composant** : dossier de l’empreinte par défaut, sinon dossier commun aux autres empreintes existantes. Si aucun dossier d’empreinte n’est disponible, le classement du composant est comparé aux dossiers `PCB_COMPONENT_LIBRARY` par le plus long suffixe d’arborescence commun. Il faut un résultat unique ; les ambiguïtés ou absences de correspondance bloquent la ligne. Le tableau indique le chemin retenu et l’origine de la déduction. Ce classement Altium sert uniquement à la destination distante, pas au départage des fichiers locaux.
-- Le schéma de nommage du dossier déduit, y compris hérité d’un parent, est utilisé lorsqu’il existe ; sinon le nom interne est proposé comme nom Altium. L’empreinte est importée une seule fois par combinaison workspace/dossier/empreinte interne/hash SHA-256. Deux composants ayant des destinations différentes produisent deux imports distincts. La destination et le champ configuré sont revérifiés avant l’écriture.
-- Les associations déjà présentes sont ignorées. L’ajout utilise `desAddFootprintToComponent` sans `addAtIndex` : il se fait **en fin de liste**. Les associations et l’empreinte par défaut existantes sont vérifiées après l’écriture.
-- `Description`, `Supplier`, `Supplier Name` et `Supplier Item No` servent au contrôle et restent dans le rapport ; ils ne modifient aucun paramètre du composant. L’opération ne crée pas de nouvelle révision du composant.
+- `Item` is compared with the **configurable Altium field** (`AU_ID` by default) after trimming outer whitespace. Values retain their case, punctuation, and leading zeros: `00042` is different from `42`. The field name is case-insensitive. This setting is saved in encrypted local storage; changing it invalidates the previous analysis.
+- Revision parameters take precedence over inherited item parameters, including when the revision value is empty. Conflicting values are not used as an identifier.
+- The inventory reads every accessible library page and uses the **latest revision** of each component. One value can match multiple components; all are listed, with one row per association. Matched components remain visible even if their local footprint is missing or their destination is ambiguous.
+- Repeated `Item / footprint` pairs in the CSV are flagged. Multiple different footprints for the same Item are allowed.
+- The selected directory and **all subdirectories** are searched recursively, without following junctions or symbolic links. The application reads **internal footprint names** from `.PcbLib` files; the filename can be different. Footprint name matching is case-insensitive and accepts an optional `.PcbLib` suffix in the CSV. Local directory paths are not used to resolve duplicate names: if the same name appears in multiple files, the row is blocked. The chosen relative path is displayed in the table.
+- A library containing multiple footprints is reduced to the selected footprint in a temporary copy. Primitives and embedded models are copied as binary data. Previous workspace bindings (`ITEMGUID`, `REVISIONGUID`, `VAULTGUID`, and `FOLDERGUID`) are neutralized without changing binary block lengths. Source files remain unchanged. Embedded 3D models are preserved; external dependencies absent from the `.PcbLib` are not collected.
+- The **Altium destination is inferred separately for each component**: first from the default footprint folder, otherwise from the common folder of its other existing footprints. If no footprint folder is available, the component hierarchy is compared with `PCB_COMPONENT_LIBRARY` folders using the longest common path suffix. A unique match is required; missing or ambiguous destinations block the row. The table shows the destination path and the reason it was selected. This Altium hierarchy is used only for the remote destination, not to resolve local filename ambiguity.
+- The inferred folder's naming scheme is used when available, including a scheme inherited from a parent. Otherwise, the internal footprint name is proposed as the Altium name. Each workspace/folder/internal-name/SHA-256 combination is imported once. Components with different destinations require separate imports. The destination and matching field are checked again before writing.
+- Existing associations are skipped. `desAddFootprintToComponent` is called without `addAtIndex`, so the new footprint is **appended to the list**. Existing associations and the default footprint are verified after the write.
+- `Description`, `Supplier`, `Supplier Name`, and `Supplier Item No` support review and remain in the report; they do not modify component parameters. The operation does not create a new component revision.
 
-Une analyse incomplète, un répertoire partiellement illisible, un fichier ambigu ou un changement de fichier/composant est signalé. Les avertissements de couverture bloquent l’import. Le total annoncé par Altium ne limite pas la pagination ; un compteur inférieur au nombre retourné n’est accepté qu’après une deuxième lecture indépendante identique, comme dans Component Lens.
+Incomplete analysis, partially unreadable directories, ambiguous files, and changed files or components are reported. Coverage warnings block import. Altium's reported total does not limit pagination; a total below the returned count is accepted only after a second independent traversal returns identical results, as in Component Lens.
 
-## Reprise après interruption
+## Recovery after interruption
 
-Chaque création et association est journalisée **avant** l’écriture distante. Les créations et associations ne sont jamais répétées automatiquement après une erreur réseau. Les lectures et les erreurs temporaires de lecture peuvent être réessayées.
+Every creation and association is journaled **before** the remote write. Mutations are never automatically repeated after a network error. Read operations may be retried after temporary failures.
 
-Une création dont le résultat est incertain bloque la réimportation du même fichier. Dans **Données locales et journal de reprise**, renseignez la clé de l’opération et l’ID de l’empreinte après vérification directe dans Altium. L’application contrôle le nom/commentaire et le dossier de l’ID fourni. Si vous avez vérifié l’absence de création, saisissez `ABSENT` pour autoriser une nouvelle tentative. Pour une association incertaine, la présence de l’association est relue avant toute action.
+A creation with an uncertain outcome blocks reimporting the same file. Under **Données locales et journal de reprise** (Local data and recovery journal), enter the operation key and footprint ID after checking directly in Altium. The application verifies the supplied ID's name/comment and folder. If you have confirmed that no footprint was created, enter `ABSENT` to allow another attempt. For an uncertain association, its presence is checked again before any action.
 
-**Arrêter** annule l’analyse ou arrête l’import entre deux lignes. Une écriture déjà engagée va jusqu’à sa vérification. Une coupure du processus ou du réseau peut laisser une empreinte créée mais non associée ; son ID reste dans le journal si la réponse a été reçue. Les opérations ne sont pas transactionnelles et il n’y a pas de suppression automatique ou de rollback distant.
+**Arrêter** (Stop) cancels analysis or stops import between rows. A write already in progress continues through verification. Terminating the process or losing the network can leave a footprint created but not associated; its ID remains in the journal if the response was received. Operations are not transactional, and there is no automatic remote deletion or rollback.
 
-## URL, tokens et données locales
+## URLs, tokens, and local data
 
-Les mêmes formes d’URL que Component Lens sont acceptées : `workspace.365.altium.com`, son URL HTTPS ou son endpoint `/api/graphql`, sur les domaines `.altium.com` et `.altium365.com`. Un préfixe `Bearer` collé avec le token est accepté.
+The same URL formats as Component Lens are accepted: `workspace.365.altium.com`, its HTTPS URL, or its `/api/graphql` endpoint, on `.altium.com` and `.altium365.com` domains. Tokens pasted with a `Bearer` prefix are accepted.
 
-La connexion, le répertoire, le champ de correspondance et le journal sont enregistrés dans **`%LOCALAPPDATA%\FootprintLinker\state.dat`**, chiffré par Windows DPAPI pour l’utilisateur courant. Les écritures sont atomiques avec sauvegarde chiffrée `.bak` et verrou exclusif. Un fichier corrompu est conservé et signalé. Le token sauvegardé peut être réutilisé en laissant son champ vide, uniquement pour son URL d’origine. Un redémarrage restaure les réglages sans appeler Altium ; cliquez sur **Connecter** pour vérifier la connexion et charger les dossiers. La sauvegarde 1.0.0 reste compatible : les connexions et le journal sont conservés, le champ devient `AU_ID` et l’ancienne destination globale est ignorée.
+The connection, directory, matching field, and journal are saved in **`%LOCALAPPDATA%\FootprintLinker\state.dat`**, encrypted with Windows DPAPI for the current user. Writes are atomic, with an encrypted `.bak` backup and an exclusive lock. Corrupted files are preserved and reported. A saved token can be reused by leaving its field empty, only for its original URL. Restarting restores settings without contacting Altium; click **Connecter** (Connect) to check the connection and load folders. Version 1.0.0 state remains compatible: connections and the journal are preserved, the matching field defaults to `AU_ID`, and the former global destination is ignored.
 
-Les tokens ne sont ni renvoyés par l’API locale, ni inclus dans les rapports, URLs, logs ou stockage navigateur. Le serveur écoute seulement sur `127.0.0.1`, sur un port aléatoire, avec une clé de session par processus, contrôle Host/Origin et Content Security Policy. Aucun CDN ni télémétrie. Les redirections HTTP sont désactivées pour les requêtes authentifiées.
+Tokens are never returned by the local API or included in reports, URLs, logs, or browser storage. The server listens only on `127.0.0.1`, on a random port, with a per-process session key, Host/Origin validation, and a Content Security Policy. No CDN or telemetry is used. HTTP redirects are disabled for authenticated requests.
 
-**Effacer la connexion et le journal** supprime aussi la sauvegarde locale ; les données Altium restent en place. Conservez/exportez le journal avant de l’effacer : la déduplication des imports repose sur ce journal. Les empreintes déjà créées par un autre outil ne sont pas réutilisées sur la seule base d’un nom. Les résultats détaillés d’analyse/import restent en mémoire jusqu’à la fermeture et peuvent être exportés ; le journal persiste entre les lancements.
+**Effacer la connexion et le journal** (Clear connection and journal) also deletes the local backup; Altium data remains in place. Export the journal before clearing it: import deduplication relies on this journal. Footprints created by another tool are not reused based only on their name. Detailed analysis/import results remain in memory until the application closes and can be exported; the journal persists across launches.
 
-## Développement
+## Development
 
-Prérequis de développement : .NET SDK 10, Node.js 22+ et Git. Les dépendances de rendu sont figées dans les sous-modules Git et `package-lock.json` ; elles sont embarquées dans le ZIP portable. La lecture/extraction pour l’import utilise Windows Structured Storage. Les licences sont regroupées dans [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Development requirements: .NET SDK 10, Node.js 22+, and Git. Rendering dependencies are pinned in Git submodules and `package-lock.json`, and bundled in the portable ZIP. Import reading/extraction uses Windows Structured Storage. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licenses.
 
 ```powershell
 git -c core.longpaths=true clone --recurse-submodules https://github.com/BenoitGaltier/altium-footprint-linker.git
@@ -83,28 +89,28 @@ dotnet run --project src/FootprintLinker
 ./scripts/smoke.ps1
 ```
 
-Dans une copie existante : `git -c core.longpaths=true submodule update --init --recursive`, puis `npm ci`. Le Source Link fourni par le SDK .NET 10 remplace la référence explicite obsolète du projet amont ; les audits de dépendances restent actifs.
+For an existing checkout, run `git -c core.longpaths=true submodule update --init --recursive`, then `npm ci`. The Source Link tooling supplied by the .NET 10 SDK replaces the upstream project's obsolete explicit reference; dependency auditing remains enabled.
 
-L’export local peut aussi fonctionner sans token de workspace :
+Local preview export also works without a workspace token:
 
 ```powershell
 ./FootprintLinker.exe --render-preview C:\Libraries\package.PcbLib SOT-23 C:\Previews\SOT23
 ```
 
-Cette commande produit `preview.svg`, `preview.glb` et les métadonnées dans `preview.json`.
+This command produces `preview.svg`, `preview.glb` when 3D conversion succeeds, and metadata in `preview.json`.
 
-Options : `--headless`, `--port 4178`, `--data-dir PATH`, `--no-persistence`. Ce dernier mode permet l’analyse mais bloque les imports car ils requièrent un journal durable. Les tests utilisent des dossiers isolés et un serveur Altium simulé ; ils ne contactent ni ne modifient un workspace réel.
+Options: `--headless`, `--port 4178`, `--data-dir PATH`, and `--no-persistence`. The last option allows analysis but blocks imports because they require a durable journal. Tests use isolated directories and a simulated Altium server; they neither contact nor modify a real workspace.
 
-Le ZIP et son SHA-256 sont produits dans `dist/`. Les tags `v*` déclenchent les tests, la compilation autonome, le test du binaire puis la création d’une release GitHub. Le binaire n’est pas signé ; le runtime embarqué peut extraire des fichiers natifs dans le répertoire temporaire Windows au premier lancement.
+The ZIP and its SHA-256 checksum are generated in `dist/`. Tags matching `v*` trigger tests, the self-contained build, binary smoke checks, and publication of a GitHub release. The binary is unsigned; the bundled runtime may extract native files into the Windows temporary directory on first launch.
 
-Voir [la validation](docs/VALIDATION.md) pour la couverture et les limites. Un essai d’import sur un workspace de test reste nécessaire pour valider les droits, schémas de nommage et fichiers réels propres à votre environnement. Évitez les modifications simultanées de la bibliothèque pendant l’opération : l’API ne fournit pas de transaction atomique entre lecture et ajout.
+See [validation coverage and limitations](docs/VALIDATION.md) (French). A test import into a test workspace is still required to validate permissions, naming schemes, and real files in your environment. Avoid simultaneous library changes during the operation: the API does not provide an atomic transaction between reading and appending an association.
 
-## Références
+## References
 
-- [API Altium 365 et authentification](https://www.altium.com/documentation/altium-developer-center/altium-365/api)
-- [Ajout d’une empreinte à un composant](https://docs.developer.altium.com/platform-api-docs/reference/library-management/operations/mutations/des-add-footprint-to-component/)
-- [Ordre d’ajout et conservation de l’empreinte par défaut](https://docs.developer.altium.com/platform-api-docs/reference/library-management/types/inputs/des-add-footprint-to-component-input/)
-- [Création d’une empreinte](https://docs.developer.altium.com/platform-api-docs/reference/library-management/types/inputs/des-create-footprint-input/)
-- [Chiffrement Windows DPAPI](https://learn.microsoft.com/en-us/windows/win32/secauthn/data-protection)
+- [Altium 365 API and authentication](https://www.altium.com/documentation/altium-developer-center/altium-365/api)
+- [Add a footprint to a component](https://docs.developer.altium.com/platform-api-docs/reference/library-management/operations/mutations/des-add-footprint-to-component/)
+- [Append order and preserving the default footprint](https://docs.developer.altium.com/platform-api-docs/reference/library-management/types/inputs/des-add-footprint-to-component-input/)
+- [Create a footprint](https://docs.developer.altium.com/platform-api-docs/reference/library-management/types/inputs/des-create-footprint-input/)
+- [Windows DPAPI encryption](https://learn.microsoft.com/en-us/windows/win32/secauthn/data-protection)
 
-Application indépendante, développée à partir de Component Lens. Ce projet n’est pas un produit Altium.
+An independent application based on Component Lens. This project is not an Altium product.
