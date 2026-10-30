@@ -1,4 +1,4 @@
-FOOTPRINT LINKER 1.2.0 — Windows 10/11 x64
+FOOTPRINT LINKER 1.3.0 — Windows 10/11 x64
 
 1. Extraire le ZIP puis lancer FootprintLinker.exe.
 2. Garder la console ouverte et utiliser l'interface du navigateur.
@@ -9,7 +9,9 @@ FOOTPRINT LINKER 1.2.0 — Windows 10/11 x64
 7. Verifier les fichiers et les destinations Altium deduites par composant.
 8. Cocher les lignes voulues et cliquer 2. Ajouter aux composants selectionnes.
 9. Voir 2D / 3D ouvre un apercu local de chaque empreinte, sans Altium.
-   Vue 2D : zoom/deplacement et export SVG. Vue 3D : rotation, zoom et export GLB.
+   Vue 2D : toutes les couches presentes ont une couleur et une case a cocher.
+   Utiliser Toutes, Aucune ou Seule ; le SVG exporte suit les couches choisies.
+   Zoom/deplacement en 2D. Vue 3D : rotation, zoom et export GLB.
    Les modeles STEP embarques et les corps extrudes disponibles sont affiches.
    Les modeles manquants sont signales ; WebGL 2 est requis pour la vue 3D.
 

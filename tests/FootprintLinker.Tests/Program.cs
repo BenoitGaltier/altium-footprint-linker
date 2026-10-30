@@ -187,6 +187,8 @@ await Test("Invalid matching fields are rejected and changing the field invalida
  var invalid=await client.PostAsJsonAsync("/api/preferences",new{matchField=" "});Check(invalid.StatusCode==HttpStatusCode.BadRequest);
  await Post(client,"/api/preferences",new{matchField="OTHER_ID"});var response=await client.PostAsJsonAsync("/api/apply",new{planId=plan.GetProperty("id").GetString(),rowIds=plan.GetProperty("rows").EnumerateArray().Select(r=>r.GetProperty("id").GetString()).ToArray()});Check(response.StatusCode==HttpStatusCode.Conflict);await app.StopAsync();}}
 });
+await Test("Layered 2D includes both sides, masks, mechanical artwork and independent 3D position without mutating the source",()=>Sync(LayerPreviewChecks.AllLayers));
+await Test("Layered 2D respects bottom pad dimensions, manual expansions, tenting, closed and disabled apertures",()=>Sync(LayerPreviewChecks.MaskGeometry));
 await Test("2D and 3D preview selects the requested footprint and tessellates its embedded STEP box",async()=>{
  var directory=Path.Combine(root,"visual");Directory.CreateDirectory(directory);var path=Path.Combine(directory,"preview.PcbLib");await VisualFixture.Write(path);
  try {
@@ -220,7 +222,7 @@ var renderFixture=Path.Combine(Environment.CurrentDirectory,".artifacts","render
 if(args.Contains("--preview"))
 {
  var nested=Path.Combine(root,"local-libraries","Transistors");Directory.CreateDirectory(nested);File.Move(library,Path.Combine(nested,"source.PcbLib"));
- await VisualFixture.Write(Path.Combine(nested,"source.PcbLib"));
+ await VisualFixture.Write(Path.Combine(nested,"source.PcbLib"), layers:true);
  File.WriteAllText(Path.Combine(root,"input.csv"),csv);
  var(client,app,_)=await Host("preview",picker:new(){Result=new(root,false)});await using(app){using(client){
  await Post(client,"/api/connect",new{name="SIMULATION — Fixture workspace",endpoint="fixture.altium.com",token="fixture-token"});await Analyze(client);

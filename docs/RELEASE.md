@@ -1,4 +1,12 @@
-Footprint Linker 1.2.0 ajoute la visualisation locale des empreintes, sans Altium Designer :
+Footprint Linker 1.3.0 ajoute le choix des couches dans la vue 2D :
+
+- Toutes les couches présentes, y compris celles de la face inférieure, sont visibles par défaut avec une couleur distincte et une légende.
+- Cases à cocher pour sélectionner plusieurs couches ; boutons **Toutes**, **Aucune** et **Seule** pour isoler une couche.
+- Couches Paste et Solder Mask des pastilles, expansions manuelles et tenting ; perçages et position des corps 3D sélectionnables séparément.
+- Export SVG conforme à la sélection, sans modifier les fichiers source, les associations Altium ou la vue 3D.
+- Les ouvertures dépendant de règles de carte non disponibles sont représentées à la taille nominale et signalées.
+
+La version conserve la visualisation locale des empreintes ajoutée en 1.2.0, sans Altium Designer :
 
 - **Voir 2D / 3D** dans le tableau : aperçu SVG vectoriel, zoom et déplacement en 2D ; rotation, déplacement et zoom en 3D.
 - Lecture directe de l’empreinte sélectionnée dans le `.PcbLib`, rendu des modèles STEP embarqués et des corps extrudés disponibles.

@@ -19,7 +19,8 @@ Chaque empreinte locale reconnue possède un bouton **Voir 2D / 3D**. L’aperç
 
 ## Visualisation 2D et 3D
 
-- **Vue 2D** : dessin vectoriel SVG des primitives de l’empreinte sélectionnée. Molette pour zoomer, glisser pour déplacer, **Recentrer** pour retrouver la vue initiale et **Exporter SVG** pour enregistrer le dessin.
+- **Vue 2D** : toutes les couches présentes sont visibles par défaut, sur les deux faces, avec une couleur et une case à cocher par couche. Le panneau **Couches 2D** permet une sélection multiple, **Toutes**, **Aucune** ou **Seule** pour isoler une couche. Molette pour zoomer, glisser pour déplacer, **Recentrer** pour retrouver la vue initiale. **Exporter SVG** conserve les couches actuellement sélectionnées.
+- Les couches cuivre, Overlay, Paste, Solder Mask, mécaniques et Keep-Out sont distinguées. Les ouvertures Paste/Solder Mask des pastilles sont projetées sur la bonne face ; les expansions manuelles et le tenting sont pris en compte. Les ouvertures dépendant de règles de carte absentes sont représentées à la taille nominale et signalées. Les perçages et la position des corps 3D disposent de groupes séparés. Les couches vides ne sont pas proposées.
 - **Vue 3D** : pastilles, traits, perçages et modèles STEP embarqués, convertis localement en maillages. Glisser pour tourner, clic droit pour déplacer, molette pour zoomer. Le navigateur doit disposer de WebGL 2. Les corps extrudés définis par un contour et leurs hauteurs sont également affichés.
 - La sélection utilise le nom interne demandé dans le CSV, y compris dans une bibliothèque à plusieurs empreintes. Le hash du fichier est revérifié avant le rendu, comme avant l’import.
 - Les modèles externes absents, corps non pris en charge ou échecs de conversion sont signalés. Si aucun corps 3D exploitable n’existe, la vue 3D affiche les primitives disponibles de l’empreinte avec un avertissement. Aucun boîtier n’est inventé à partir du nom du composant.

@@ -1,11 +1,8 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using OriginalCircuit.Altium;
 using OriginalCircuit.Altium.Models.Pcb;
 using OriginalCircuit.Altium.Rendering.Gltf;
-using OriginalCircuit.Altium.Rendering.Svg;
-using OriginalCircuit.Eda.Rendering;
 
 namespace FootprintLinker;
 
@@ -13,7 +10,7 @@ public sealed record PreviewRequest(string PlanId, string RowId);
 public sealed record PreviewExtrusion(double[][] Outline, double Base, double Height, string Color, double Opacity);
 public sealed record PreviewData(string Name, string File, string Sha256, string Svg, string? Glb,
     int Pads, int Bodies, int RenderedModels, double WidthMm, double HeightMm,
-    double CenterX, double CenterY, PreviewExtrusion[] Extrusions, string[] Warnings);
+    double CenterX, double CenterY, PreviewExtrusion[] Extrusions, PreviewLayer[] Layers, string[] Warnings);
 
 public sealed class FootprintPreview
 {
@@ -35,15 +32,14 @@ public sealed class FootprintPreview
             {
                 var library = (OriginalCircuit.Altium.Models.Pcb.PcbLibrary)await AltiumLibrary.OpenPcbLibAsync(new MemoryStream(bytes), ct);
                 if (library[row.InternalName] is not PcbComponent component) throw new AppException("previewUnavailable");
-                if (component.Pads.Count + component.Tracks.Count + component.Arcs.Count + component.Regions.Count + component.Texts.Count > 100_000)
+                if (component.Children.Count() > 100_000)
                     throw new AppException("previewTooLarge");
                 var warnings = library.Diagnostics.Select(d => d.ToString()).Distinct().Take(20).ToList();
                 var bounds = component.Bounds;
-                if (component.Pads.Count + component.Tracks.Count + component.Arcs.Count + component.Fills.Count + component.Regions.Count + component.ComponentBodies.Count == 0)
+                if (!component.Children.Any())
                     throw new AppException("previewEmpty");
-                using var svg = new MemoryStream();
-                await new SvgRenderer().RenderAsync(component, svg, new RenderOptions { Width = 1100, Height = 760, AutoZoom = true }, ct);
-                if (svg.Length > 10_000_000) throw new AppException("previewTooLarge");
+                var layered = LayerPreview.Render(component, ct);
+                if (layered.RuleBasedMasks) warnings.Add("previewMaskRules");
 
                 // A library footprint is placed into an in-memory document at its original coordinates.
                 // No PCB substrate, guessed package outline or external file resolver is created.
@@ -94,10 +90,10 @@ public sealed class FootprintPreview
                 if (rendered < expectedModels) warnings.Add("previewMissingModels");
                 if (rendered + extrusions.Length < component.ComponentBodies.Count) warnings.Add("previewMissingModels");
                 if (rendered == 0 && extrusions.Length == 0) warnings.Add("previewNoBody");
-                var result = new PreviewData(component.Name, file.RelativePath, file.Sha256, Encoding.UTF8.GetString(svg.ToArray()).TrimStart('\uFEFF'), glb,
+                var result = new PreviewData(component.Name, file.RelativePath, file.Sha256, layered.Svg, glb,
                     component.Pads.Count, component.ComponentBodies.Count, rendered,
                     bounds.Max.X.ToMm() - bounds.Min.X.ToMm(), bounds.Max.Y.ToMm() - bounds.Min.Y.ToMm(),
-                    centerX, centerY, extrusions, warnings.Distinct().ToArray());
+                    centerX, centerY, extrusions, layered.Layers, warnings.Distinct().ToArray());
                 if (cache.Count >= 3) cache.Clear();
                 cache[key] = result;
                 return result;

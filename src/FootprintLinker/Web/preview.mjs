@@ -7,7 +7,8 @@ const warnings = {
   previewNoBody:'Aucun corps 3D n’est disponible dans ce fichier. La vue 3D montre les primitives de l’empreinte.',
   previewMissingModels:'Certains modèles 3D liés sont absents ou n’ont pas pu être convertis. Les fichiers externes ne sont pas chargés automatiquement.',
   preview3dFailed:'Le modèle 3D n’a pas pu être converti. La vue 2D reste disponible.',
-  previewTooLarge3d:'Le modèle 3D dépasse la limite d’aperçu. La vue 2D reste disponible.'
+  previewTooLarge3d:'Le modèle 3D dépasse la limite d’aperçu. La vue 2D reste disponible.',
+  previewMaskRules:'Paste / Solder Mask : les ouvertures pilotées par des règles sont montrées à la taille nominale des pastilles. Les expansions manuelles du fichier sont appliquées.'
 };
 function disposeObject(object) {
   object.traverse(item => { item.geometry?.dispose(); const materials=Array.isArray(item.material)?item.material:[item.material]; for(const m of materials) m?.dispose(); });
@@ -15,12 +16,14 @@ function disposeObject(object) {
 export function createPreview(api) {
   let generation=0, data=null, renderer=null, scene=null, camera=null, orbit=null, observer=null, frame=0, imageUrl=null;
   let zoom=1, panX=0, panY=0, drag=null, mode='2d';
+  let svgDocument=null, selectedLayers=new Set();
   const image=$('previewImage'), stage=$('previewStage'), dialog=$('previewDialog');
   function clear() {
     cancelAnimationFrame(frame); observer?.disconnect(); observer=null; orbit?.dispose(); orbit=null;
     if(scene) disposeObject(scene); scene=null;
     renderer?.dispose(); renderer?.forceContextLoss(); renderer=null; $('preview3d').replaceChildren();
-    if(imageUrl) URL.revokeObjectURL(imageUrl); imageUrl=null; image.removeAttribute('src');
+    if(imageUrl) URL.revokeObjectURL(imageUrl); imageUrl=null; image.removeAttribute('src'); svgDocument=null; drag=null;
+    $('previewLayerList').replaceChildren(); $('previewLayers').hidden=true;
   }
   function close() { generation++; clear(); data=null; if(dialog.open) dialog.close(); }
   function transform() { image.style.transform=`translate(${panX}px,${panY}px) scale(${zoom})`; }
@@ -35,12 +38,39 @@ export function createPreview(api) {
   function reset() { zoom=1; panX=0; panY=0; transform(); fit3d(); }
   function selectMode(value) {
     mode=value; $('preview2d').hidden=value!=='2d'; $('preview3d').hidden=value!=='3d';
+    $('previewLayers').hidden=value!=='2d'||!data;
+    $('previewWorkspace').classList.toggle('is-3d',value==='3d');
+    $('previewLayerEmpty').hidden=value!=='2d'||!data||selectedLayers.size>0;
     $('previewMode2d').setAttribute('aria-selected',String(value==='2d'));
     $('previewMode3d').setAttribute('aria-selected',String(value==='3d'));
     $('previewHelp').textContent=value==='2d'?'Molette : zoom · Glisser : déplacer · SVG vectoriel':'Glisser : tourner · Clic droit : déplacer · Molette : zoom';
     $('previewDownload').textContent=value==='3d'?'Exporter GLB':'Exporter SVG';
     $('previewDownload').disabled=!data||(value==='3d'&&(!data.glb||data.extrusions.length>0));
     if(value==='3d'&&renderer) { resize(); if(!frame) animate(); }
+  }
+  function updateLayers() {
+    if(!svgDocument)return;
+    for(const group of svgDocument.querySelectorAll('g[data-layer]')) group.setAttribute('display',selectedLayers.has(Number(group.getAttribute('data-layer')))?'inline':'none');
+    const previous=imageUrl;
+    imageUrl=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svgDocument)],{type:'image/svg+xml'})); image.src=imageUrl;
+    if(previous)URL.revokeObjectURL(previous);
+    $('previewLayerCount').textContent=`${selectedLayers.size} / ${data.layers.length} couches`;
+    $('previewLayerEmpty').hidden=mode!=='2d'||selectedLayers.size>0;
+    for(const input of $('previewLayerList').querySelectorAll('input')) input.checked=selectedLayers.has(Number(input.value));
+  }
+  function setupLayers(result) {
+    svgDocument=new DOMParser().parseFromString(result.svg,'image/svg+xml');
+    selectedLayers=new Set(result.layers.map(layer=>layer.id));
+    for(const layer of result.layers) {
+      const label=document.createElement('label'), input=document.createElement('input'), swatch=document.createElement('span'), name=document.createElement('span'), only=document.createElement('button');
+      input.type='checkbox'; input.value=String(layer.id); input.checked=true; input.setAttribute('aria-label',layer.name);
+      input.addEventListener('change',()=>{input.checked?selectedLayers.add(layer.id):selectedLayers.delete(layer.id);updateLayers();});
+      swatch.className='layer-swatch'; swatch.style.backgroundColor=layer.color; swatch.setAttribute('aria-hidden','true');
+      name.textContent=layer.name; only.type='button'; only.textContent='Seule'; only.className='layer-only'; only.setAttribute('aria-label',`Afficher seulement ${layer.name}`);
+      only.addEventListener('click',event=>{event.preventDefault();selectedLayers=new Set([layer.id]);updateLayers();});
+      label.append(input,swatch,name); const row=document.createElement('div');row.className='layer-row';row.append(label,only);$('previewLayerList').append(row);
+    }
+    $('previewLayers').hidden=false; updateLayers();
   }
   function resize() {
     if(!renderer||!camera)return;
@@ -77,7 +107,7 @@ export function createPreview(api) {
     try {
       const result=await api('preview','POST',{planId,rowId}); if(token!==generation)return; data=result;
       $('previewTitle').textContent=result.name; $('previewMeta').textContent=`${result.file} · ${result.pads} pastille(s) · ${result.widthMm.toFixed(2)} × ${result.heightMm.toFixed(2)} mm · ${result.renderedModels} modèle(s) STEP affiché(s)`;
-      imageUrl=URL.createObjectURL(new Blob([result.svg],{type:'image/svg+xml'})); image.src=imageUrl;
+      setupLayers(result);
       $('previewNotice').textContent=result.warnings.map(w=>warnings[w]||w).join('\n'); $('previewNotice').hidden=!result.warnings.length;
       $('previewDownload').disabled=false;
       if(result.glb||result.extrusions.length) {
@@ -87,6 +117,8 @@ export function createPreview(api) {
     } catch(error) { if(token===generation) { $('previewNotice').textContent=error.message; $('previewNotice').hidden=false; $('previewMeta').textContent='Aperçu indisponible'; } }
   }
   $('previewClose').addEventListener('click',close); dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
+  $('previewLayersAll').addEventListener('click',()=>{if(data){selectedLayers=new Set(data.layers.map(layer=>layer.id));updateLayers();}});
+  $('previewLayersNone').addEventListener('click',()=>{selectedLayers.clear();updateLayers();});
   $('previewMode2d').addEventListener('click',()=>selectMode('2d')); $('previewMode3d').addEventListener('click',()=>selectMode('3d')); $('previewReset').addEventListener('click',reset);
   stage.addEventListener('wheel',event=>{if(mode!=='2d')return; event.preventDefault(); zoom=Math.min(20,Math.max(.15,zoom*Math.exp(-event.deltaY*.0015)));transform();},{passive:false});
   stage.addEventListener('pointerdown',event=>{if(mode!=='2d')return;drag={x:event.clientX-panX,y:event.clientY-panY};stage.setPointerCapture(event.pointerId);});
@@ -94,7 +126,7 @@ export function createPreview(api) {
   stage.addEventListener('pointerup',()=>{drag=null;}); stage.addEventListener('pointercancel',()=>{drag=null;});
   $('previewDownload').addEventListener('click',()=>{
     if(!data)return; const glb=mode==='3d'&&data.glb;
-    const bytes=glb?Uint8Array.from(atob(data.glb),c=>c.charCodeAt(0)):data.svg;
+    const bytes=glb?Uint8Array.from(atob(data.glb),c=>c.charCodeAt(0)):new XMLSerializer().serializeToString(svgDocument);
     const url=URL.createObjectURL(new Blob([bytes],{type:glb?'model/gltf-binary':'image/svg+xml'})); const a=document.createElement('a');a.href=url;a.download=data.name.replace(/[\\/:*?"<>|]/g,'_')+(glb?'.glb':'.svg');a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   return {open,close};

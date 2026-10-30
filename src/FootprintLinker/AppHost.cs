@@ -6,7 +6,7 @@ namespace FootprintLinker;
 
 public static class AppHost
 {
-    public const string Version = "1.2.0";
+    public const string Version = "1.3.0";
     public static WebApplication Build(string[] args, Action<IServiceCollection>? configure = null)
     {
         var port = 0;

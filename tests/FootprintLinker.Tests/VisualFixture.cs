@@ -7,7 +7,7 @@ namespace FootprintLinker.Tests;
 
 internal static class VisualFixture
 {
-    public static async Task Write(string path, string name = "SOT-23", string modelKind = "step")
+    public static async Task Write(string path, string name = "SOT-23", string modelKind = "step", bool layers = false)
     {
         var library = new OriginalCircuit.Altium.Models.Pcb.PcbLibrary();
         var other = new PcbComponent { Name = "WRONG_FIRST", Height = Coord.FromMm(5) };
@@ -16,6 +16,11 @@ internal static class VisualFixture
         part.AddPad(Pad(-1,-1,"1"));part.AddPad(Pad(-1,1,"2"));part.AddPad(Pad(1,0,"3"));
         foreach(var pair in new[]{(-1.5,-1.5,1.5,-1.5),(1.5,-1.5,1.5,1.5),(1.5,1.5,-1.5,1.5),(-1.5,1.5,-1.5,-1.5)})
             part.AddTrack(new PcbTrack{Start=Point(pair.Item1,pair.Item2),End=Point(pair.Item3,pair.Item4),Width=Coord.FromMm(.1),Layer=33});
+        if(layers)
+        {
+            var bottom=Pad(0,-.7,"4");bottom.Layer=32;part.AddPad(bottom);
+            foreach(var layer in new[]{34,56,57}) part.AddTrack(new PcbTrack{Start=Point(-1.3,(layer-55)*.12),End=Point(1.3,(layer-55)*.12),Width=Coord.FromMm(.1),Layer=layer});
+        }
         if(modelKind!="none")
         {
             var id="12345678-1234-1234-1234-123456789012";

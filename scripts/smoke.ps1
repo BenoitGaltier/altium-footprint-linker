@@ -43,8 +43,14 @@ try {
         $metadata = Get-Content -LiteralPath (Join-Path $renderOutput 'preview.json') -Raw | ConvertFrom-Json
         if ($metadata.renderedModels -ne 1 -or $metadata.pads -ne 3) { throw 'Portable render metadata mismatch' }
         if (!(Get-Content -LiteralPath (Join-Path $renderOutput 'preview.svg') -Raw).Contains('<svg')) { throw 'Portable SVG missing' }
+        [xml]$layeredSvg = Get-Content -LiteralPath (Join-Path $renderOutput 'preview.svg') -Raw
+        $layerIds = @($metadata.layers | ForEach-Object id)
+        foreach ($expected in @(1,33,35,37,200)) {
+            if ($expected -notin $layerIds -or !$layeredSvg.SelectSingleNode("//*[@data-layer='$expected']")) { throw "Portable SVG layer $expected missing" }
+        }
+        if (@($metadata.layers.color | Select-Object -Unique).Count -ne $metadata.layers.Count) { throw 'Portable layer colours are not distinct' }
         $glb = [IO.File]::ReadAllBytes((Join-Path $renderOutput 'preview.glb'))
         if ([Text.Encoding]::ASCII.GetString($glb,0,4) -ne 'glTF') { throw 'Portable GLB invalid' }
-        Write-Output '4 portable 2D/3D render checks passed without workspace access'
+        Write-Output '6 portable 2D/3D and layer render checks passed without workspace access'
     } finally { if (!$render.HasExited) { Stop-Process -Id $render.Id } }
 } finally { if (!$process.HasExited) { Stop-Process -Id $process.Id } }
